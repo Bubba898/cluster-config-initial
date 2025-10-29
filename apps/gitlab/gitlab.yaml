@@ -66,7 +66,12 @@ spec:
       hpa:
         minReplicas: 1
       storage:
-        secret: {}
+        secret:
+          s3:
+            accesskey: ""
+            secretkey: ""
+        filesystem:
+          enabled: true
     gitlab:
       webservice:
         minReplicas: 1
@@ -103,18 +108,13 @@ spec:
         name: gitlab
         namespace: flux-system
   values:
-    gitlabUrl: "http://gitlab.${INGRESS_IP}.sslip.io"
+    replicas: 1
+    gitlabUrl: "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
     runnerRegistrationToken: "$(registrationToken)"
     unregisterRunners: true
     runners:
       privileged: true
       image: ubuntu:22.04
-      cache:
-        cacheType: s3
-        s3ServerAddress: ""
-        s3BucketName: ""
-        s3BucketLocation: ""
-        s3CacheInsecure: true
     securityContext:
       allowPrivilegeEscalation: true
       privileged: true

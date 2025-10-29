@@ -8,7 +8,7 @@
   vars:
     gitlab_host: "gitlab.{{ ingress_ip }}.sslip.io"
     gitlab_url: "http://{{ gitlab_host }}"
-    gitlab_internal_host: "gitlab-webservice-default.gitlab.svc.cluster.local:8080"
+    gitlab_internal_host: "gitlab-webservice-default.gitlab.svc.cluster.local:8181"
     gitlab_internal_url: "http://{{ gitlab_internal_host }}"
     gitlab_project_namespace: "infrastructure"
     gitlab_project_name: "cluster-config"
@@ -78,6 +78,53 @@
     - name: Set GitLab access token fact
       ansible.builtin.set_fact:
         gitlab_access_token: "{{ access_token_result.stdout | trim }}"
+    
+    - name: Get project ID
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | urlencode }}"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        status_code: 200
+      register: project_info
+
+    - name: Create deploy token for Flux
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ project_info.json.id }}/deploy_tokens"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        body_format: json
+        body:
+          name: "flux-deploy-token"
+          scopes: ["read_repository"]
+          expires_at: "{{ '%Y-%m-%d' | strftime( ( ansible_date_time.epoch | int ) + ( 365 * 86400 ) ) }}"
+        status_code: [201, 400]  # 400 if already exists
+      register: deploy_token_result
+      failed_when:
+        - deploy_token_result.status not in [201, 400]
+        - deploy_token_result.status == 400 and 'has already been taken' not in (deploy_token_result.json.message.name | default(''))
+
+    - name: Get existing deploy tokens if creation returned 400
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ project_info.json.id }}/deploy_tokens"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        status_code: 200
+      register: existing_tokens
+      when: deploy_token_result.status == 400
+
+    - name: Set deploy token facts
+      ansible.builtin.set_fact:
+        deploy_token_username: "{{ deploy_token_result.json.username if deploy_token_result.status == 201 else existing_tokens.json[0].username }}"
+        deploy_token_password: "{{ deploy_token_result.json.token if deploy_token_result.status == 201 else 'EXISTING_TOKEN_REUSE_NOT_POSSIBLE' }}"
+      when: deploy_token_result.status == 201 or (deploy_token_result.status == 400 and existing_tokens.json | length > 0)
+
+    - name: Fail if we cannot retrieve or create deploy token
+      ansible.builtin.fail:
+        msg: "Could not create or retrieve deploy token. If token already exists, please delete it first and re-run."
+      when: deploy_token_password == 'EXISTING_TOKEN_REUSE_NOT_POSSIBLE'
 
     - name: Set GitLab repository URLs
       ansible.builtin.set_fact:
@@ -92,6 +139,8 @@
           - "✓ GitLab access token created successfully"
           - "Token name: {{ gitlab_token_name }}"
           - "Scopes: api, write_repository, read_repository"
+          - "✓ Deploy token created for Flux"
+          - "Deploy token username: {{ deploy_token_username }}"
 
     - name: Create GitLab group (namespace)
       ansible.builtin.uri:
@@ -192,14 +241,14 @@
       ansible.builtin.shell: |
         set -euo pipefail
         
-        # Create secret with GitLab credentials for Flux
+        # Create secret with GitLab deploy token credentials for Flux
         kubectl create secret generic gitlab-auth \
           --namespace=flux-system \
-          --from-literal=username=oauth2 \
-          --from-literal=password='{{ gitlab_access_token }}' \
+          --from-literal=username='{{ deploy_token_username }}' \
+          --from-literal=password='{{ deploy_token_password }}' \
           --dry-run=client -o yaml | kubectl apply -f -
         
-        echo "GitLab authentication secret created"
+        echo "GitLab authentication secret created with deploy token"
       args:
         executable: /bin/bash
     
@@ -268,7 +317,7 @@
           - "  {{ gitlab_repo_url_internal_clean }}"
           - ""
           - "Authentication:"
-          - "  Flux uses Secret 'gitlab-auth' in namespace 'flux-system'"
+          - "  Flux uses deploy token via Secret 'gitlab-auth' in namespace 'flux-system'"
           - ""
           - "You can now:"
           - "  1. Clone from external: git clone {{ gitlab_repo_url_external }}"
