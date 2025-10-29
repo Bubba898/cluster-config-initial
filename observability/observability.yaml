@@ -51,6 +51,9 @@ spec:
     grafana:
       enabled: true
       adminPassword: admin
+      podAnnotations:
+        proxy.istio.io/config: |
+          tracing: {}
       service:
         type: ClusterIP
       # Istio Grafana dashboards
