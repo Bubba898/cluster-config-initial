@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitlab
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: runner-registration
+  namespace: gitlab
+stringData:
+  registrationToken: "CHANGE_ME_RUNNER_REG_TOKEN"
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: gitlab
+  namespace: flux-system
+spec:
+  interval: 1h0m0s
+  url: https://charts.gitlab.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  interval: 20m0s
+  chart:
+    spec:
+      chart: gitlab
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: gitlab
+        namespace: flux-system
+  values:
+    global:
+      edition: ce
+      hosts:
+        domain: YOUR_DOMAIN
+        gitlab:
+          name: GITLAB_HOST
+        registry:
+          name: REGISTRY_HOST
+      ingress:
+        enabled: false
+      kas:
+        enabled: false
+      appConfig:
+        enableUsagePing: false
+      psql:
+        image:
+          tag: 15
+      storage:
+        class: longhorn
+    nginx-ingress:
+      enabled: false
+    certmanager:
+      install: false
+    prometheus:
+      install: false
+    registry:
+      enabled: true
+      hpa:
+        minReplicas: 1
+      storage:
+        secret: {}
+    gitlab-runner:
+      install: false
+    redis:
+      master:
+        persistence:
+          storageClass: longhorn
+      replica:
+        persistence:
+          storageClass: longhorn
+    postgresql:
+      primary:
+        persistence:
+          storageClass: longhorn
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gitlab-runner
+  namespace: gitlab
+spec:
+  interval: 10m0s
+  chart:
+    spec:
+      chart: gitlab-runner
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: gitlab
+        namespace: flux-system
+  values:
+    gitlabUrl: "http://GITLAB_HOST"
+    runnerRegistrationToken: "$(registrationToken)"
+    unregisterRunners: true
+    runners:
+      privileged: true
+      image: ubuntu:22.04
+      cache:
+        cacheType: s3
+        s3ServerAddress: ""
+        s3BucketName: ""
+        s3BucketLocation: ""
+        s3CacheInsecure: true
+    securityContext:
+      privileged: true
+  valuesFrom:
+    - kind: Secret
+      name: runner-registration
+      valuesKey: registrationToken
+      targetPath: runnerRegistrationToken
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: default-gateway
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - GITLAB_HOST
+        - REGISTRY_HOST
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  hosts:
+    - GITLAB_HOST
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: gitlab-webservice-default.gitlab.svc.cluster.local
+            port:
+              number: 8181
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gitlab-registry
+  namespace: gitlab
+spec:
+  hosts:
+    - REGISTRY_HOST
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: registry.gitlab.svc.cluster.local
+            port:
+              number: 5000

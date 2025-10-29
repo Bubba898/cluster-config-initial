@@ -1,0 +1,43 @@
+# Global variables for xanmanning.k3s
+k3s_release_version: v1.30.4+k3s1
+k3s_state: installed
+
+# Address where agents will register (usually the master IP or a VIP)
+k3s_registration_address: MASTER_IP
+
+# Server configuration
+k3s_server:
+  write_kubeconfig_mode: "644"
+  disable:
+    - traefik
+  tls_san:
+    - MASTER_IP
+  node_labels:
+    - "node-role.kubernetes.io/master=true"
+  # For single-node init
+  cluster_init: true
+
+# Agent configuration
+k3s_agent:
+  node_labels:
+    - "node-role.kubernetes.io/worker=true"
+
+# Optional: switch to embedded etcd if planning HA later
+# k3s_etcd_datastore: true
+
+# CNI: default flannel is fine; set to cilium if desired
+# k3s_use_unsupported_config: true
+# k3s_service_cidr: 10.43.0.0/16
+# k3s_cluster_cidr: 10.42.0.0/16
+
+# Host preparation options
+prep_install_packages:
+  - curl
+  - jq
+  - chrony
+  - open-iscsi
+  - nfs-common
+  - ca-certificates
+
+# Longhorn prerequisites
+longhorn_enable_iscsi: true

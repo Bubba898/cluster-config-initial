@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-system
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: istio
+  namespace: flux-system
+spec:
+  interval: 1h0m0s
+  url: https://istio-release.storage.googleapis.com/charts
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: kiali
+  namespace: flux-system
+spec:
+  interval: 1h0m0s
+  url: https://kiali.org/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: istio-base
+  namespace: istio-system
+spec:
+  interval: 10m0s
+  chart:
+    spec:
+      chart: base
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: istio
+        namespace: flux-system
+  values: {}
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: istiod
+  namespace: istio-system
+spec:
+  dependsOn:
+    - name: istio-base
+  interval: 10m0s
+  chart:
+    spec:
+      chart: istiod
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: istio
+        namespace: flux-system
+  values:
+    pilot:
+      traceSampling: 50
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: istio-ingressgateway
+  namespace: istio-system
+spec:
+  dependsOn:
+    - name: istiod
+  interval: 10m0s
+  chart:
+    spec:
+      chart: gateway
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: istio
+        namespace: flux-system
+  values:
+    service:
+      type: LoadBalancer
+      ports:
+        - name: http2
+          port: 80
+          targetPort: 8080
+        - name: https
+          port: 443
+          targetPort: 8443
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kiali-server
+  namespace: istio-system
+spec:
+  dependsOn:
+    - name: istiod
+  interval: 10m0s
+  chart:
+    spec:
+      chart: kiali-server
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: kiali
+        namespace: flux-system
+  values:
+    auth:
+      strategy: anonymous

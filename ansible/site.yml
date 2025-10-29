@@ -1,0 +1,36 @@
+---
+- name: Bootstrap k3s cluster
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure required packages are installed
+      ansible.builtin.package:
+        name: "{{ prep_install_packages }}"
+        state: present
+
+    - name: Enable and start iscsid for Longhorn
+      ansible.builtin.service:
+        name: iscsid
+        state: started
+        enabled: true
+      when: longhorn_enable_iscsi | default(true)
+
+    - name: Disable swap immediately
+      ansible.builtin.command: swapoff -a
+      changed_when: false
+
+    - name: Ensure swap is disabled on boot
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^(.*\sswap\s.*)$'
+        replace: '# \1'
+
+  roles:
+    - role: xanmanning.k3s
+
+  post_tasks:
+    - name: Show kubeconfig path on master
+      ansible.builtin.debug:
+        msg: "/etc/rancher/k3s/k3s.yaml contains the kubeconfig on the master node"
+      when: inventory_hostname in groups['master']
