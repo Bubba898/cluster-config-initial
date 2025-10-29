@@ -8,7 +8,9 @@ kind: Secret
 metadata:
   name: runner-registration
   namespace: gitlab
+type: Opaque
 stringData:
+  runner-registration-token: "" # need to leave as an empty string for compatibility reasons
   runner-token: "glrtr-m-kR_yjLTEwbzNsGHtQT"
 ---
 apiVersion: v1
@@ -116,8 +118,8 @@ spec:
   values:
     replicas: 1
     gitlabUrl: "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
+    runnerToken: "glrtr-m-kR_yjLTEwbzNsGHtQT"
     unregisterRunners: false
-    secret: runner-registration
     runners:
       privileged: true
       image: ubuntu:22.04
