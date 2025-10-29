@@ -67,6 +67,12 @@ spec:
         minReplicas: 1
       storage:
         secret: {}
+    gitlab:
+      webservice:
+        minReplicas: 1
+        maxReplicas: 1
+        hpa:
+          minReplicas: 1
     gitlab-runner:
       install: false
     redis:
