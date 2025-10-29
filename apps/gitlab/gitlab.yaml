@@ -9,7 +9,7 @@ metadata:
   name: runner-registration
   namespace: gitlab
 stringData:
-  registrationToken: "CHANGE_ME_RUNNER_REG_TOKEN"
+  runner-token: "glrtr-m-kR_yjLTEwbzNsGHtQT"
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
