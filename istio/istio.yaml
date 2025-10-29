@@ -108,3 +108,20 @@ spec:
   values:
     auth:
       strategy: anonymous
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: kiali
+  namespace: istio-system
+spec:
+  hosts:
+    - kiali.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: kiali.istio-system.svc.cluster.local
+            port:
+              number: 20001
