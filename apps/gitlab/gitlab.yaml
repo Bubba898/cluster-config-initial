@@ -40,12 +40,14 @@ spec:
       edition: ce
       hosts:
         domain: ${INGRESS_IP}.sslip.io
+        https: false
         gitlab:
           name: gitlab.${INGRESS_IP}.sslip.io
         registry:
           name: registry.${INGRESS_IP}.sslip.io
       ingress:
         enabled: false
+        configureCertmanager: false
       kas:
         enabled: false
       appConfig:
