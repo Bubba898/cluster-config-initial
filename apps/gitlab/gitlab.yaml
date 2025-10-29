@@ -127,7 +127,7 @@ spec:
       image: ubuntu:22.04
       config: |
         [[runners]]
-          clone_url: "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
+          clone_url = "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
           [runners.kubernetes]
             namespace = "{{.Release.Namespace}}"
             image = "ubuntu:22.04"
