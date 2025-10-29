@@ -1,0 +1,88 @@
+---
+- name: Remove k3s cluster and clean residual data
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Stop k3s services if present
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - k3s
+        - k3s-agent
+      ignore_errors: true
+
+    - name: Uninstall k3s on master nodes if uninstall script exists
+      ansible.builtin.shell: /usr/local/bin/k3s-uninstall.sh
+      args:
+        creates: /tmp/.k3s-uninstalled-master
+      register: master_uninstall
+      changed_when: master_uninstall.rc == 0
+      failed_when: false
+      when: inventory_hostname in groups['master'] and ansible_facts['os_family'] is defined
+
+    - name: Mark master uninstall completed
+      ansible.builtin.file:
+        path: /tmp/.k3s-uninstalled-master
+        state: touch
+      when: inventory_hostname in groups['master']
+
+    - name: Uninstall k3s agent on worker nodes if uninstall script exists
+      ansible.builtin.shell: /usr/local/bin/k3s-agent-uninstall.sh
+      args:
+        creates: /tmp/.k3s-uninstalled-agent
+      register: agent_uninstall
+      changed_when: agent_uninstall.rc == 0
+      failed_when: false
+      when: inventory_hostname in groups['workers'] | default([])
+
+    - name: Mark agent uninstall completed
+      ansible.builtin.file:
+        path: /tmp/.k3s-uninstalled-agent
+        state: touch
+      when: inventory_hostname in groups['workers'] | default([])
+
+    - name: Remove residual Kubernetes and k3s data
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher
+        - /var/lib/rancher
+        - /var/lib/kubelet
+        - /etc/cni
+        - /opt/cni
+        - /var/lib/cni
+        - /var/lib/containerd
+        - /run/k3s
+      ignore_errors: true
+
+    - name: Remove k3s binaries if present
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/bin/k3s
+        - /usr/local/bin/k3s-killall.sh
+        - /usr/local/bin/k3s-uninstall.sh
+        - /usr/local/bin/k3s-agent-uninstall.sh
+      ignore_errors: true
+
+    - name: Flush iptables Kubernetes chains (best-effort)
+      ansible.builtin.shell: |
+        set -o errexit -o nounset -o pipefail
+        command -v iptables >/dev/null 2>&1 || exit 0
+        iptables-save | awk '/KUBE-|CNI-/{print}' | while read -r chain; do :; done
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+
+    - name: Reboot if requested
+      ansible.builtin.reboot:
+        msg: "Reboot after k3s removal"
+        reboot_timeout: 900
+      when: (reboot_after_k3s_removal | default(false)) | bool
+

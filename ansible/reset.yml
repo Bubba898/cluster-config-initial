@@ -1,0 +1,7 @@
+---
+- name: Reset k3s cluster (remove and bootstrap)
+  import_playbook: remove-k3s.yml
+
+- name: Bootstrap k3s cluster
+  import_playbook: bootstrap.yml
+
