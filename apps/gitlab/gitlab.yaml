@@ -120,6 +120,8 @@ spec:
     gitlabUrl: "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
     runnerToken: "glrtr-m-kR_yjLTEwbzNsGHtQT"
     unregisterRunners: false
+    rbac:
+      create: true
     runners:
       privileged: true
       image: ubuntu:22.04
