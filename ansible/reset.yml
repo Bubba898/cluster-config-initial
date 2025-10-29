@@ -1,7 +1,7 @@
 ---
-- name: Reset k3s cluster (remove and bootstrap)
+- name: Remove k3s cluster
   import_playbook: remove-k3s.yml
 
-- name: Bootstrap k3s cluster
+- name: Bootstrap k3s cluster (includes kubeconfig setup and Flux)
   import_playbook: bootstrap.yml
 

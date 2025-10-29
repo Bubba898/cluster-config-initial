@@ -1,0 +1,281 @@
+---
+- name: Migrate Flux to In-Cluster GitLab
+  hosts: localhost
+  become: false
+  connection: local
+  gather_facts: false
+
+  vars:
+    gitlab_host: "gitlab.{{ ingress_ip }}.sslip.io"
+    gitlab_url: "http://{{ gitlab_host }}"
+    gitlab_internal_host: "gitlab-webservice-default.gitlab.svc.cluster.local:8080"
+    gitlab_internal_url: "http://{{ gitlab_internal_host }}"
+    gitlab_project_namespace: "infrastructure"
+    gitlab_project_name: "cluster-config"
+    gitlab_project_path: "{{ gitlab_project_namespace }}/{{ gitlab_project_name }}"
+    gitlab_token_name: "ansible-automation"
+
+  tasks:
+    - name: Check required variables
+      ansible.builtin.assert:
+        that:
+          - ingress_ip is defined
+        fail_msg: "Required variable missing. Set ingress_ip in group_vars/all.yml"
+
+    - name: Get GitLab root password from Kubernetes secret
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl get secret gitlab-gitlab-initial-root-password -n gitlab -o jsonpath='{.data.password}' | base64 -d
+      args:
+        executable: /bin/bash
+      register: gitlab_root_password_result
+      changed_when: false
+
+    - name: Set GitLab root password fact
+      ansible.builtin.set_fact:
+        gitlab_root_password: "{{ gitlab_root_password_result.stdout }}"
+
+    - name: Wait for GitLab to be ready
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "Waiting for GitLab webservice pod to be ready..."
+        kubectl wait --for=condition=ready pod \
+          -l app=webservice \
+          -n gitlab \
+          --timeout=10m
+        
+        echo "Waiting for GitLab API to respond..."
+        max_attempts=60
+        attempt=0
+        while [ $attempt -lt $max_attempts ]; do
+          if curl -sf -o /dev/null "{{ gitlab_url }}/-/readiness"; then
+            echo "GitLab is ready!"
+            exit 0
+          fi
+          echo "GitLab not ready yet, waiting... (attempt $((attempt+1))/$max_attempts)"
+          sleep 10
+          attempt=$((attempt+1))
+        done
+        echo "GitLab did not become ready in time"
+        exit 1
+      args:
+        executable: /bin/bash
+      register: gitlab_ready
+      retries: 3
+      delay: 30
+      until: gitlab_ready.rc == 0
+
+    - name: Create or retrieve Personal Access Token for automation
+      ansible.builtin.script:
+        cmd: "{{ playbook_dir }}/create-gitlab-token.sh '{{ gitlab_url }}' '{{ gitlab_root_password }}' '{{ gitlab_token_name }}'"
+        executable: /bin/bash
+      register: access_token_result
+      failed_when: access_token_result.rc != 0 or (access_token_result.stdout | trim) == ''
+      retries: 3
+      delay: 10
+      until: access_token_result.rc == 0 and (access_token_result.stdout | trim) != ''
+
+    - name: Set GitLab access token fact
+      ansible.builtin.set_fact:
+        gitlab_access_token: "{{ access_token_result.stdout | trim }}"
+
+    - name: Set GitLab repository URLs
+      ansible.builtin.set_fact:
+        # URL with token for git push from local machine
+        gitlab_repo_url_external: "http://oauth2:{{ gitlab_access_token }}@{{ gitlab_host }}/{{ gitlab_project_path }}.git"
+        # Clean URL without token for Flux (will use Secret)
+        gitlab_repo_url_internal_clean: "http://{{ gitlab_internal_host }}/{{ gitlab_project_path }}.git"
+
+    - name: Display token info
+      ansible.builtin.debug:
+        msg:
+          - "✓ GitLab access token created successfully"
+          - "Token name: {{ gitlab_token_name }}"
+          - "Scopes: api, write_repository, read_repository"
+
+    - name: Create GitLab group (namespace)
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/groups"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        body_format: json
+        body:
+          name: "{{ gitlab_project_namespace }}"
+          path: "{{ gitlab_project_namespace }}"
+          visibility: "private"
+        status_code: [201, 400]  # 400 if already exists
+      register: gitlab_group
+      failed_when: 
+        - gitlab_group.status not in [201, 400]
+        - gitlab_group.status == 400 and 'has already been taken' not in (gitlab_group.json.message.path | default(['']))[0]
+
+    - name: Get group ID
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/groups/{{ gitlab_project_namespace }}"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        status_code: 200
+      register: group_info
+
+    - name: Create GitLab project
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        body_format: json
+        body:
+          name: "{{ gitlab_project_name }}"
+          namespace_id: "{{ group_info.json.id }}"
+          visibility: "private"
+          initialize_with_readme: false
+        status_code: [201, 400]  # 400 if already exists
+      register: gitlab_project
+      failed_when:
+        - gitlab_project.status not in [201, 400]
+        - gitlab_project.status == 400 and 'has already been taken' not in (gitlab_project.json.message.name | default(['']))[0]
+
+    - name: Add in-cluster GitLab as git remote
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd "{{ playbook_dir }}/.."
+        
+        # Remove remote if it already exists
+        git remote remove incluster 2>/dev/null || true
+        
+        # Add the new remote (using external URL for push from local machine)
+        git remote add incluster "{{ gitlab_repo_url_external }}"
+        
+        echo "Git remote 'incluster' added successfully"
+      args:
+        executable: /bin/bash
+
+    - name: Push repository to in-cluster GitLab
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd "{{ playbook_dir }}/.."
+        
+        # Push all branches
+        git push incluster --all --force
+        
+        # Push all tags
+        git push incluster --tags --force || true
+        
+        echo "Repository pushed to in-cluster GitLab successfully"
+      args:
+        executable: /bin/bash
+      register: git_push
+      retries: 3
+      delay: 5
+      until: git_push.rc == 0
+
+    - name: Update bootstrap_git_repo_url in group_vars
+      ansible.builtin.lineinfile:
+        path: "{{ playbook_dir }}/group_vars/all.yml"
+        regexp: '^bootstrap_git_repo_url:'
+        line: 'bootstrap_git_repo_url: "{{ gitlab_repo_url_internal_clean }}"'
+        backup: yes
+      register: updated_config
+
+    - name: Display updated configuration
+      ansible.builtin.debug:
+        msg:
+          - "✓ GitLab project created: {{ gitlab_url }}/{{ gitlab_project_path }}"
+          - "✓ Repository pushed to in-cluster GitLab"
+          - "✓ Configuration updated in group_vars/all.yml"
+          - ""
+          - "Next step: Update Flux to use the in-cluster repository"
+
+    - name: Create Kubernetes Secret for GitLab authentication
+      ansible.builtin.shell: |
+        set -euo pipefail
+        
+        # Create secret with GitLab credentials for Flux
+        kubectl create secret generic gitlab-auth \
+          --namespace=flux-system \
+          --from-literal=username=oauth2 \
+          --from-literal=password='{{ gitlab_access_token }}' \
+          --dry-run=client -o yaml | kubectl apply -f -
+        
+        echo "GitLab authentication secret created"
+      args:
+        executable: /bin/bash
+    
+    - name: Update Flux to use in-cluster GitLab
+      ansible.builtin.shell: |
+        set -euo pipefail
+        
+        # Update the cluster-params ConfigMap
+        kubectl -n flux-system create configmap cluster-params \
+          --from-literal=INGRESS_IP='{{ ingress_ip }}' \
+          --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Create a clean URL without embedded credentials
+        CLEAN_URL="http://{{ gitlab_internal_host }}/{{ gitlab_project_path }}.git"
+        
+        # Update the GitRepository resource with clean URL and secretRef
+        cat <<EOF | kubectl apply -f -
+        apiVersion: source.toolkit.fluxcd.io/v1
+        kind: GitRepository
+        metadata:
+          name: cluster-config
+          namespace: flux-system
+        spec:
+          interval: 1m0s
+          ref:
+            branch: main
+          secretRef:
+            name: gitlab-auth
+          url: $CLEAN_URL
+        EOF
+        
+        # Force reconcile the GitRepository
+        flux reconcile source git cluster-config --timeout=5m
+        
+        echo "Flux successfully migrated to in-cluster GitLab!"
+      args:
+        executable: /bin/bash
+
+    - name: Verify Flux reconciliation
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "Verifying Flux is syncing from in-cluster GitLab..."
+        
+        # Check GitRepository source
+        kubectl wait --for=condition=Ready --timeout=5m -n flux-system gitrepository/cluster-config
+        
+        # Display the current source URL
+        kubectl get gitrepository cluster-config -n flux-system -o jsonpath='{.spec.url}'
+        echo ""
+      args:
+        executable: /bin/bash
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg:
+          - "======================================================================"
+          - "Migration to In-Cluster GitLab Complete!"
+          - "======================================================================"
+          - ""
+          - "GitLab Project: {{ gitlab_url }}/{{ gitlab_project_path }}"
+          - ""
+          - "External URL (for git operations from outside cluster):"
+          - "  {{ gitlab_repo_url_external }}"
+          - ""
+          - "Internal URL (for Flux inside cluster):"
+          - "  {{ gitlab_repo_url_internal_clean }}"
+          - ""
+          - "Authentication:"
+          - "  Flux uses Secret 'gitlab-auth' in namespace 'flux-system'"
+          - ""
+          - "You can now:"
+          - "  1. Clone from external: git clone {{ gitlab_repo_url_external }}"
+          - "  2. Push changes: git push incluster main"
+          - "  3. Flux will automatically sync from in-cluster GitLab"
+          - ""
+          - "To use the in-cluster GitLab as origin:"
+          - "  git remote set-url origin {{ gitlab_repo_url_external }}"
+          - "======================================================================"
+

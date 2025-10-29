@@ -13,6 +13,18 @@
       args:
         executable: /bin/bash
 
+    - name: Verify kubeconfig is valid and cluster is accessible
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if ! kubectl cluster-info >/dev/null 2>&1; then
+          echo "ERROR: Cannot connect to Kubernetes cluster." >&2
+          echo "If you just reset the cluster, the kubeconfig may be outdated." >&2
+          echo "Please run: ansible-playbook setup-kubeconfig.yml" >&2
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+
     - name: Ensure flux-system namespace exists
       ansible.builtin.shell: |
         set -euo pipefail
@@ -43,24 +55,83 @@
       args:
         executable: /bin/bash
 
-    - name: Wait for Flux to reconcile all resources
+    - name: Wait for Flux GitRepository to be ready
       ansible.builtin.shell: |
         set -euo pipefail
-        echo "Waiting for Flux GitRepository to be ready..."
-        kubectl wait --for=condition=Ready --timeout=5m -n flux-system gitrepository/flux-system || true
-        
-        echo "Waiting for Flux Kustomization to be ready..."
-        kubectl wait --for=condition=Ready --timeout=5m -n flux-system kustomization/flux-system || true
-        
-        echo "Checking Flux reconciliation status..."
-        flux reconcile source git flux-system --timeout=5m
-        flux reconcile kustomization flux-system --timeout=5m
-        
-        echo "Flux reconciliation complete!"
+        kubectl wait --for=condition=Ready --timeout=5m -n flux-system gitrepository/cluster-config
       args:
         executable: /bin/bash
-      register: flux_reconcile
       retries: 3
       delay: 10
-      until: flux_reconcile.rc == 0
+
+    - name: Reconcile GitRepository source
+      ansible.builtin.shell: |
+        set -euo pipefail
+        flux reconcile source git cluster-config --timeout=5m
+      args:
+        executable: /bin/bash
+
+    - name: Reconcile infrastructure kustomization
+      ansible.builtin.shell: |
+        set -euo pipefail
+        flux reconcile kustomization infrastructure --timeout=5m
+        kubectl wait --for=condition=Ready --timeout=5m -n flux-system kustomization/infrastructure
+      args:
+        executable: /bin/bash
+      retries: 2
+      delay: 10
+
+    - name: Reconcile metallb-config kustomization
+      ansible.builtin.shell: |
+        set -euo pipefail
+        flux reconcile kustomization metallb-config --timeout=5m
+        kubectl wait --for=condition=Ready --timeout=5m -n flux-system kustomization/metallb-config
+      args:
+        executable: /bin/bash
+      retries: 2
+      delay: 10
+
+    - name: Reconcile istio kustomization
+      ansible.builtin.shell: |
+        set -euo pipefail
+        flux reconcile kustomization istio --timeout=5m
+        kubectl wait --for=condition=Ready --timeout=5m -n flux-system kustomization/istio
+      args:
+        executable: /bin/bash
+      retries: 2
+      delay: 10
+
+    - name: Reconcile istio-config kustomization
+      ansible.builtin.shell: |
+        set -euo pipefail
+        flux reconcile kustomization istio-config --timeout=5m
+        kubectl wait --for=condition=Ready --timeout=5m -n flux-system kustomization/istio-config
+      args:
+        executable: /bin/bash
+      retries: 2
+      delay: 10
+
+    - name: Reconcile observability kustomization
+      ansible.builtin.shell: |
+        set -euo pipefail
+        flux reconcile kustomization observability --timeout=5m
+        kubectl wait --for=condition=Ready --timeout=5m -n flux-system kustomization/observability
+      args:
+        executable: /bin/bash
+      retries: 2
+      delay: 10
+
+    - name: Reconcile apps kustomization
+      ansible.builtin.shell: |
+        set -euo pipefail
+        flux reconcile kustomization apps --timeout=10m
+        kubectl wait --for=condition=Ready --timeout=10m -n flux-system kustomization/apps
+      args:
+        executable: /bin/bash
+      retries: 2
+      delay: 10
+
+    - name: Display Flux reconciliation complete message
+      ansible.builtin.debug:
+        msg: "✓ Flux reconciliation complete! All kustomizations are ready."
 
