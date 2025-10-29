@@ -107,11 +107,6 @@ spec:
         kind: HelmRepository
         name: gitlab
         namespace: flux-system
-  valuesFrom:
-    - kind: Secret
-      name: runner-registration
-      valuesKey: registrationToken
-      targetPath: runnerRegistrationToken
   values:
     replicas: 1
     gitlabUrl: "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
@@ -122,6 +117,7 @@ spec:
     securityContext:
       allowPrivilegeEscalation: true
       privileged: true
+    secret: runner-registration
 ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
