@@ -58,6 +58,17 @@ spec:
   values:
     pilot:
       traceSampling: 50
+    meshConfig:
+      defaultConfig:
+        tracing:
+          zipkin:
+            address: jaeger.observability.svc.cluster.local:9411
+          sampling: 50.0
+      enableTracing: true
+    global:
+      tracer:
+        zipkin:
+          address: jaeger.observability.svc.cluster.local:9411
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
@@ -108,3 +119,14 @@ spec:
   values:
     auth:
       strategy: anonymous
+    external_services:
+      prometheus:
+        url: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+      grafana:
+        url: http://kube-prometheus-stack-grafana.observability.svc.cluster.local:80
+        in_cluster_url: http://kube-prometheus-stack-grafana.observability.svc.cluster.local:80
+      tracing:
+        enabled: true
+        in_cluster_url: http://jaeger.observability.svc.cluster.local:16686
+        url: jaeger.${INGRESS_IP}.sslip.io
+        use_grpc: false

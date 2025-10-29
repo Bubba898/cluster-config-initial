@@ -16,6 +16,9 @@ spec:
         - registry.${INGRESS_IP}.sslip.io
         - headlamp.${INGRESS_IP}.sslip.io
         - kiali.${INGRESS_IP}.sslip.io
+        - grafana.${INGRESS_IP}.sslip.io
+        - prometheus.${INGRESS_IP}.sslip.io
+        - jaeger.${INGRESS_IP}.sslip.io
 ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
@@ -33,4 +36,55 @@ spec:
             host: kiali.istio-system.svc.cluster.local
             port:
               number: 20001
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: grafana
+  namespace: istio-system
+spec:
+  hosts:
+    - grafana.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: kube-prometheus-stack-grafana.observability.svc.cluster.local
+            port:
+              number: 80
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: prometheus
+  namespace: istio-system
+spec:
+  hosts:
+    - prometheus.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: kube-prometheus-stack-prometheus.observability.svc.cluster.local
+            port:
+              number: 9090
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: jaeger
+  namespace: istio-system
+spec:
+  hosts:
+    - jaeger.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: jaeger.observability.svc.cluster.local
+            port:
+              number: 16686
 
