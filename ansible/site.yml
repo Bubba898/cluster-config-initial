@@ -34,3 +34,112 @@
       ansible.builtin.debug:
         msg: "/etc/rancher/k3s/k3s.yaml contains the kubeconfig on the master node"
       when: inventory_hostname in groups['master']
+
+    - name: Fetch kubeconfig from master node
+      ansible.builtin.fetch:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: "/tmp/k3s.yaml"
+        flat: true
+      when: inventory_hostname in groups['master']
+      run_once: true
+
+    - name: Rewrite server address in fetched kubeconfig to master IP
+      ansible.builtin.replace:
+        path: /tmp/k3s.yaml
+        regexp: 'server: https://127\.0\.0\.1:6443'
+        replace: "server: https://{{ hostvars[groups['master'][0]].ansible_host }}:6443"
+      become: false
+      delegate_to: localhost
+      run_once: true
+
+    - name: Ensure local ~/.kube directory exists
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'HOME') + '/.kube' }}"
+        state: directory
+        mode: "0700"
+      become: false
+      delegate_to: localhost
+      run_once: true
+
+    - name: Initialize local kubeconfig if missing
+      ansible.builtin.copy:
+        dest: "{{ lookup('env', 'HOME') + '/.kube/config' }}"
+        content: ""
+        mode: "0600"
+        force: no
+      become: false
+      delegate_to: localhost
+      run_once: true
+
+    - name: Backup existing local kubeconfig
+      ansible.builtin.copy:
+        src: "{{ lookup('env', 'HOME') + '/.kube/config' }}"
+        dest: "{{ lookup('env', 'HOME') + '/.kube/config.bak' }}"
+        mode: "0600"
+        remote_src: true
+      become: false
+      delegate_to: localhost
+      run_once: true
+
+    - name: Merge k3s kubeconfig into local kubeconfig
+      ansible.builtin.shell: |
+        set -euo pipefail
+        KUBECONFIG="{{ lookup('env', 'HOME') + '/.kube/config' }}:/tmp/k3s.yaml" kubectl config view --flatten > "{{ lookup('env', 'HOME') + '/.kube/config.new' }}"
+        mv "{{ lookup('env', 'HOME') + '/.kube/config.new' }}" "{{ lookup('env', 'HOME') + '/.kube/config' }}"
+      args:
+        executable: /bin/bash
+      become: false
+      delegate_to: localhost
+      run_once: true
+
+    - name: Ensure Flux CLI is installed on controller
+      ansible.builtin.shell: |
+        set -euo pipefail
+        command -v flux >/dev/null 2>&1 || { echo "Flux CLI not found. Install from https://fluxcd.io/docs/installation/" >&2; exit 1; }
+      args:
+        executable: /bin/bash
+      become: false
+      delegate_to: localhost
+      run_once: true
+
+    - name: Ensure flux-system namespace exists
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl get ns flux-system >/dev/null 2>&1 || kubectl create ns flux-system
+      args:
+        executable: /bin/bash
+      become: false
+      delegate_to: localhost
+      run_once: true
+
+    - name: Apply cluster parameters ConfigMap for Flux substitutions
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl -n flux-system create configmap cluster-params \
+          --from-literal=INGRESS_IP='{{ ingress_ip }}' \
+          --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      become: false
+      delegate_to: localhost
+      run_once: true
+
+    - name: Install or upgrade Flux controllers
+      ansible.builtin.shell: |
+        set -euo pipefail
+        flux install
+      args:
+        executable: /bin/bash
+      become: false
+      delegate_to: localhost
+      run_once: true
+
+    - name: Apply Flux Git sync manifests
+      ansible.builtin.shell: |
+        set -euo pipefail
+        sed "s|<BOOTSTRAP_GIT_REPO_URL>|{{ bootstrap_git_repo_url }}|g" "{{ playbook_dir }}/../clusters/home/flux-system/gotk-sync.yaml" | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      become: false
+      delegate_to: localhost
+      run_once: true

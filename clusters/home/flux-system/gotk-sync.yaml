@@ -10,7 +10,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 1m0s
-  url: YOUR_GIT_REPO_URL
+  url: '<BOOTSTRAP_GIT_REPO_URL>'
   ref:
     branch: main
 ---
@@ -28,8 +28,9 @@ spec:
     name: cluster-config
   timeout: 2m0s
   postBuild:
-    substitute:
-      INGRESS_IP: "192.168.178.240"
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-params
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -47,8 +48,9 @@ spec:
     name: cluster-config
   timeout: 5m0s
   postBuild:
-    substitute:
-      INGRESS_IP: "192.168.178.240"
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-params
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -66,8 +68,9 @@ spec:
     name: cluster-config
   timeout: 5m0s
   postBuild:
-    substitute:
-      INGRESS_IP: "192.168.178.240"
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-params
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -85,5 +88,6 @@ spec:
     name: cluster-config
   timeout: 10m0s
   postBuild:
-    substitute:
-      INGRESS_IP: "192.168.178.240"
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-params
