@@ -5,10 +5,18 @@ This folder contains Ansible playbooks to bootstrap a k3s cluster with settings 
 ## Files
 - `inventory.ini`: Define your nodes and SSH users
 - `group_vars/all.yml`: Role variables configuring k3s
-- `bootstrap.yml`: Playbook with host preparation and the k3s role
+- `requirements.yml`: Ansible Galaxy dependencies
+
+### Bootstrap Playbooks
+- `bootstrap.yml`: Main orchestration playbook that runs the complete setup
+- `prepare-nodes.yml`: System preparation (packages, swap disable, iscsid)
+- `install-k3s.yml`: K3s cluster installation using xanmanning.k3s role
+- `setup-kubeconfig.yml`: Fetch and merge kubeconfig to local machine
+- `setup-flux.yml`: Install and configure Flux GitOps
+
+### Maintenance Playbooks
 - `remove-k3s.yml`: Playbook to remove k3s and clean residual data
 - `reset.yml`: Playbook that removes and re-bootstraps the cluster (combines remove-k3s.yml and bootstrap.yml)
-- `requirements.yml`: Ansible Galaxy dependencies
 
 ## Usage
 1) Install role dependencies:
@@ -22,6 +30,24 @@ ansible-galaxy install -r requirements.yml
 3) Bootstrap the k3s cluster:
 ```bash
 ansible-playbook -i inventory.ini bootstrap.yml
+```
+
+### Run individual bootstrap steps
+
+For more granular control, you can run individual playbooks:
+
+```bash
+# Prepare nodes only
+ansible-playbook -i inventory.ini prepare-nodes.yml
+
+# Install k3s only
+ansible-playbook -i inventory.ini install-k3s.yml
+
+# Setup kubeconfig only
+ansible-playbook -i inventory.ini setup-kubeconfig.yml
+
+# Setup Flux only
+ansible-playbook -i inventory.ini setup-flux.yml
 ```
 
 ### Remove / uninstall the k3s cluster

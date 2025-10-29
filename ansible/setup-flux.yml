@@ -1,0 +1,66 @@
+---
+- name: Setup Flux GitOps
+  hosts: localhost
+  become: false
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Ensure Flux CLI is installed on controller
+      ansible.builtin.shell: |
+        set -euo pipefail
+        command -v flux >/dev/null 2>&1 || { echo "Flux CLI not found. Install from https://fluxcd.io/docs/installation/" >&2; exit 1; }
+      args:
+        executable: /bin/bash
+
+    - name: Ensure flux-system namespace exists
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl get ns flux-system >/dev/null 2>&1 || kubectl create ns flux-system
+      args:
+        executable: /bin/bash
+
+    - name: Apply cluster parameters ConfigMap for Flux substitutions
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl -n flux-system create configmap cluster-params \
+          --from-literal=INGRESS_IP='{{ ingress_ip }}' \
+          --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+
+    - name: Install or upgrade Flux controllers
+      ansible.builtin.shell: |
+        set -euo pipefail
+        flux install
+      args:
+        executable: /bin/bash
+
+    - name: Apply Flux Git sync manifests
+      ansible.builtin.shell: |
+        set -euo pipefail
+        sed "s|<BOOTSTRAP_GIT_REPO_URL>|{{ bootstrap_git_repo_url }}|g" "{{ playbook_dir }}/../clusters/home/flux-system/gotk-sync.yaml" | kubectl apply -f -
+      args:
+        executable: /bin/bash
+
+    - name: Wait for Flux to reconcile all resources
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "Waiting for Flux GitRepository to be ready..."
+        kubectl wait --for=condition=Ready --timeout=5m -n flux-system gitrepository/flux-system || true
+        
+        echo "Waiting for Flux Kustomization to be ready..."
+        kubectl wait --for=condition=Ready --timeout=5m -n flux-system kustomization/flux-system || true
+        
+        echo "Checking Flux reconciliation status..."
+        flux reconcile source git flux-system --timeout=5m
+        flux reconcile kustomization flux-system --timeout=5m
+        
+        echo "Flux reconciliation complete!"
+      args:
+        executable: /bin/bash
+      register: flux_reconcile
+      retries: 3
+      delay: 10
+      until: flux_reconcile.rc == 0
+
