@@ -57,8 +57,6 @@ spec:
         class: longhorn
     nginx-ingress:
       enabled: false
-    certmanager:
-      install: false
     prometheus:
       install: false
     registry:
@@ -110,6 +108,7 @@ spec:
         s3BucketLocation: ""
         s3CacheInsecure: true
     securityContext:
+      allowPrivilegeEscalation: true
       privileged: true
   valuesFrom:
     - kind: Secret
