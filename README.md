@@ -8,16 +8,48 @@ This repository manages a k3s cluster via GitOps using Flux. It includes:
 - GitLab with in-cluster Runner and Container Registry
 
 ## Prerequisites
-- A k3s cluster (single node is fine to start)
-- `kubectl` and `flux` CLI installed
+- Either: a k3s cluster already running
+- Or: use the Ansible playbook in `ansible/` to bootstrap k3s (recommended)
+    1) Edit placeholders:
+        - `ansible/inventory.ini`: set `MASTER_IP`, SSH user
+    2) Install the Ansible role and run:
+        - ```bash
+            cd ansible
+            ansible-galaxy install -r requirements.yml
+            ansible-playbook -i inventory.ini site.yml
+        ```
+- `kubectl` and `flux` CLI installed (if you bootstrap Flux manually)
 - DNS domain ready (e.g., example.com) and ability to point records to your MetalLB IP(s)
 - Chosen Layer2 IP range on your LAN for MetalLB (unused range)
 
-## Configure placeholders
+Default ingress IP
+- This repo is preconfigured to use a single MetalLB IP: `192.168.178.240`.
+- The Istio ingress Service is pinned to the same IP.
+- You can change this IP by updating both:
+  - `infrastructure/metallb/metallb.yaml` → `IPAddressPool.spec.addresses`
+  - `istio/istio.yaml` → `istio-ingressgateway.values.service.loadBalancerIP`
+
+Single-source IP configuration
+- The IP is centrally defined as `INGRESS_IP` via Flux `postBuild.substitute` in `clusters/home/flux-system/gotk-sync.yaml`.
+- Manifests reference `${INGRESS_IP}` so you only set it once.
+- To change the IP:
+  1. Edit `clusters/home/flux-system/gotk-sync.yaml` and set `INGRESS_IP` to your new address
+  2. Commit and let Flux reconcile (MetalLB pool, Istio Service, and GitLab hosts will update)
+
+Access without a domain (sslip.io)
+- To use the stack without owning a domain, the manifests are pre-set to sslip.io hostnames that resolve automatically to the ingress IP:
+  - `YOUR_DOMAIN`: `${INGRESS_IP}.sslip.io`
+  - `GITLAB_HOST`: `gitlab.${INGRESS_IP}.sslip.io`
+  - `REGISTRY_HOST`: `registry.${INGRESS_IP}.sslip.io`
+- These are already configured in `apps/gitlab/gitlab.yaml` (including the Istio `Gateway`/`VirtualService`).
+- When you later have a real domain, update `apps/gitlab/gitlab.yaml` accordingly and (optionally) add TLS via cert-manager.
+
+## Cluster Configuration
+- `clusters/home/flux-system/gotk-sync.yaml`: set `spec.url` to YOUR_GIT_REPO_URL
 Search and replace the following placeholders in this repository before bootstrapping:
 - YOUR_GIT_REPO_URL: Git URL of this repo (e.g., `ssh://git@your.git/owner/cluster-config.git`)
 - YOUR_DOMAIN: base domain (e.g., `example.com`)
-- METALLB_L2_RANGE: IP range for MetalLB (e.g., `192.168.1.240-192.168.1.250`)
+- METALLB_L2_RANGE: IP range for MetalLB (default single IP: `192.168.178.240-192.168.178.240`)
 - GITLAB_HOST: GitLab FQDN (e.g., `gitlab.example.com`)
 - REGISTRY_HOST: Registry FQDN (e.g., `registry.example.com`)
 

@@ -79,6 +79,7 @@ spec:
   values:
     service:
       type: LoadBalancer
+      loadBalancerIP: ${INGRESS_IP}
       ports:
         - name: http2
           port: 80

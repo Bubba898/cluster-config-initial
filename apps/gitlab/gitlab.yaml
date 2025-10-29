@@ -39,11 +39,11 @@ spec:
     global:
       edition: ce
       hosts:
-        domain: YOUR_DOMAIN
+        domain: ${INGRESS_IP}.sslip.io
         gitlab:
-          name: GITLAB_HOST
+          name: gitlab.${INGRESS_IP}.sslip.io
         registry:
-          name: REGISTRY_HOST
+          name: registry.${INGRESS_IP}.sslip.io
       ingress:
         enabled: false
       kas:
@@ -97,7 +97,7 @@ spec:
         name: gitlab
         namespace: flux-system
   values:
-    gitlabUrl: "http://GITLAB_HOST"
+    gitlabUrl: "http://gitlab.${INGRESS_IP}.sslip.io"
     runnerRegistrationToken: "$(registrationToken)"
     unregisterRunners: true
     runners:
@@ -131,8 +131,8 @@ spec:
         name: http
         protocol: HTTP
       hosts:
-        - GITLAB_HOST
-        - REGISTRY_HOST
+        - gitlab.${INGRESS_IP}.sslip.io
+        - registry.${INGRESS_IP}.sslip.io
 ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
@@ -141,7 +141,7 @@ metadata:
   namespace: gitlab
 spec:
   hosts:
-    - GITLAB_HOST
+    - gitlab.${INGRESS_IP}.sslip.io
   gateways:
     - istio-system/default-gateway
   http:
@@ -158,7 +158,7 @@ metadata:
   namespace: gitlab
 spec:
   hosts:
-    - REGISTRY_HOST
+    - registry.${INGRESS_IP}.sslip.io
   gateways:
     - istio-system/default-gateway
   http:
