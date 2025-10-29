@@ -27,6 +27,10 @@ spec:
         kind: HelmRepository
         name: metallb
         namespace: flux-system
+  install:
+    crds: Create
+  upgrade:
+    crds: Create
   values:
     controller:
       tolerations: []
