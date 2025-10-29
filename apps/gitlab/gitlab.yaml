@@ -110,14 +110,20 @@ spec:
   values:
     replicas: 1
     gitlabUrl: "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
-    unregisterRunners: true
+    unregisterRunners: false
+    secret: runner-registration
     runners:
       privileged: true
       image: ubuntu:22.04
+      config: |
+        [[runners]]
+          [runners.kubernetes]
+            namespace = "{{.Release.Namespace}}"
+            image = "ubuntu:22.04"
+            privileged = true
     securityContext:
       allowPrivilegeEscalation: true
       privileged: true
-    secret: runner-registration
 ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
