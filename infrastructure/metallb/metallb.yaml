@@ -36,12 +36,3 @@ spec:
       tolerations: []
     speaker:
       tolerations: []
----
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: default-pool
-  namespace: metallb-system
-spec:
-  addresses:
-    - ${INGRESS_IP}-${INGRESS_IP}
