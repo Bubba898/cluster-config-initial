@@ -16,8 +16,6 @@ ansible-galaxy install -r requirements.yml
 
 2) Update `inventory.ini` and `group_vars/all.yml` placeholders:
 - MASTER_IP
-- GITLAB_HOST
-- REGISTRY_HOST
 
 3) Run the playbook:
 ```bash
