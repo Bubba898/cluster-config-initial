@@ -51,6 +51,7 @@ spec:
         - grafana.${INGRESS_IP}.sslip.io
         - prometheus.${INGRESS_IP}.sslip.io
         - jaeger.${INGRESS_IP}.sslip.io
+        - longhorn.${INGRESS_IP}.sslip.io
       tls:
         mode: SIMPLE
         credentialName: wildcard-sslip-tls
@@ -122,4 +123,21 @@ spec:
             host: jaeger-query.observability.svc.cluster.local
             port:
               number: 16686
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: longhorn
+  namespace: istio-system
+spec:
+  hosts:
+    - longhorn.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: longhorn-frontend.longhorn-system.svc.cluster.local
+            port:
+              number: 80
 
