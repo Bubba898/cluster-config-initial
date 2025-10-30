@@ -127,8 +127,7 @@ spec:
         in_cluster_url: http://kube-prometheus-stack-grafana.observability.svc.cluster.local:80
       tracing:
         enabled: true
-        provider: jaeger
-        in_cluster_url: http://jaeger.observability.svc.cluster.local:16686
-        url: https://jaeger.${INGRESS_IP}.sslip.io
+        in_cluster_url: http://jaeger-query.observability.svc.cluster.local:16686/jaeger
+        url: https://jaeger.${INGRESS_IP}.sslip.io/jaeger
         use_grpc: false
         namespace_selector: true

@@ -119,7 +119,7 @@ spec:
   http:
     - route:
         - destination:
-            host: jaeger.observability.svc.cluster.local
+            host: jaeger-query.observability.svc.cluster.local
             port:
               number: 16686
 
