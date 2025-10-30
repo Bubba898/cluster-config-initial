@@ -66,7 +66,7 @@ spec:
         enableUsagePing: false
       registry:
         api:
-          url: http://registry.gitlab.svc.cluster.local:5000
+          url: http://gitlab-registry.gitlab.svc.cluster.local:5000
       psql:
         image:
           tag: 15
@@ -132,15 +132,16 @@ spec:
       config: |
         [[runners]]
           clone_url = "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
+
           environment = [
-            "CI_REGISTRY=registry.gitlab.svc.cluster.local:5000",
+            "CI_REGISTRY=gitlab-registry.gitlab.svc.cluster.local:5000",
             "CI_SERVER_HOST=gitlab-webservice-default.gitlab.svc.cluster.local",
             "CI_SERVER_PORT=8181",
             "CI_SERVER_PROTOCOL=http"
           ]
           pre_build_script = """
             # Override any registry variables that might use external hostnames
-            export CI_REGISTRY="registry.gitlab.svc.cluster.local:5000"
+            export CI_REGISTRY="gitlab-registry.gitlab.svc.cluster.local:5000"
             export CI_REGISTRY_IMAGE="$$CI_REGISTRY/$$CI_PROJECT_PATH"
             
             echo "Using internal registry: $$CI_REGISTRY"
@@ -187,6 +188,6 @@ spec:
   http:
     - route:
         - destination:
-            host: registry.gitlab.svc.cluster.local
+            host: gitlab-registry.gitlab.svc.cluster.local
             port:
               number: 5000
