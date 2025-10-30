@@ -19,3 +19,6 @@
 
 - name: Setup Headlamp authentication
   ansible.builtin.import_playbook: setup-headlamp-auth.yml
+
+- name: Display cluster summary
+  ansible.builtin.import_playbook: display-cluster-summary.yml

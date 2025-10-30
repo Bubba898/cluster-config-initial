@@ -1,0 +1,73 @@
+---
+# Display cluster summary with service URLs and information
+- name: Display Cluster Summary
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ingress_ip: "{{ hostvars[groups['master'][0]].ingress_ip }}"
+  tasks:
+    - name: Display cluster setup completion message
+      ansible.builtin.debug:
+        msg: |
+          
+          ╔════════════════════════════════════════════════════════════════════════════════╗
+          ║                                                                                ║
+          ║                   🎉  CLUSTER BOOTSTRAP COMPLETED! 🎉                          ║
+          ║                                                                                ║
+          ╚════════════════════════════════════════════════════════════════════════════════╝
+
+          Your Kubernetes cluster is now fully configured and running!
+          
+          ┌────────────────────────────────────────────────────────────────────────────────┐
+          │ 📊  INSTALLED SERVICES & ACCESS URLS                                           │
+          └────────────────────────────────────────────────────────────────────────────────┘
+
+          🖥️  HEADLAMP - Kubernetes Dashboard
+             URL:      https://headlamp.{{ ingress_ip }}.sslip.io
+             Purpose:  Modern, user-friendly Kubernetes dashboard with Flux plugin
+             Docs:     https://headlamp.dev/docs/
+             Auth:     Use the token created during setup (see ansible/scripts/get-headlamp-token.sh)
+
+          🦊  GITLAB - Git Repository & CI/CD Platform
+             URL:      https://gitlab.{{ ingress_ip }}.sslip.io
+             Purpose:  Self-hosted Git repository manager with built-in CI/CD pipelines
+             Docs:     https://docs.gitlab.com/
+             Auth:     Username: root, Password: retrieve with:
+                       kubectl get secret gitlab-gitlab-initial-root-password -n gitlab \
+                         -o jsonpath='{.data.password}' | base64 -d
+
+          📦  GITLAB REGISTRY - Container Image Registry
+             URL:      https://registry.{{ ingress_ip }}.sslip.io
+             Purpose:  Private Docker container registry integrated with GitLab
+             Docs:     https://docs.gitlab.com/ee/user/packages/container_registry/
+             Login:    docker login registry.{{ ingress_ip }}.sslip.io
+
+          📈  GRAFANA - Metrics Visualization & Dashboards
+             URL:      https://grafana.{{ ingress_ip }}.sslip.io
+             Purpose:  Beautiful dashboards for metrics, logs, and traces (includes Istio dashboards)
+             Docs:     https://grafana.com/docs/grafana/latest/
+             Auth:     Username: admin, Password: admin (change on first login)
+
+          📊  PROMETHEUS - Metrics Collection & Monitoring
+             URL:      https://prometheus.{{ ingress_ip }}.sslip.io
+             Purpose:  Time-series database for metrics collection and querying
+             Docs:     https://prometheus.io/docs/
+             Auth:     No authentication required
+
+          🔍  KIALI - Service Mesh Observability
+             URL:      https://kiali.{{ ingress_ip }}.sslip.io
+             Purpose:  Service mesh traffic visualization and health monitoring for Istio
+             Docs:     https://kiali.io/docs/
+             Auth:     No authentication required
+
+          🔎  JAEGER - Distributed Tracing
+             URL:      https://jaeger.{{ ingress_ip }}.sslip.io
+             Purpose:  End-to-end distributed request tracing across microservices
+             Docs:     https://www.jaegertracing.io/docs/
+             Auth:     No authentication required
+
+          ╔════════════════════════════════════════════════════════════════════════════════╗
+          ║                         Happy Clustering! 🚢☸️                                  ║
+          ╚════════════════════════════════════════════════════════════════════════════════╝
+
