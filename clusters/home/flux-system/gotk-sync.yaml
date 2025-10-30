@@ -81,7 +81,6 @@ spec:
   dependsOn:
     - name: infrastructure
     - name: metallb-config
-    - name: cert-manager-config
   interval: 5m0s
   path: ./istio
   prune: true
@@ -102,6 +101,7 @@ metadata:
 spec:
   dependsOn:
     - name: istio
+    - name: cert-manager-config
   interval: 5m0s
   path: ./istio-config
   prune: true
