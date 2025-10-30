@@ -16,7 +16,7 @@
     gitlab_token_name: "ansible-automation"
 
   tasks:
-    - name: Wait for GitLab to be ready
+    - name: Wait for GitLab webservice pod to be ready
       ansible.builtin.shell: |
         set -euo pipefail
         echo "Waiting for GitLab webservice pod to be ready..."
@@ -24,32 +24,25 @@
           -l app=webservice \
           -n gitlab \
           --timeout=10m
-        
-        echo "Waiting for GitLab API to respond..."
-        max_attempts=60
-        attempt=0
-        while [ $attempt -lt $max_attempts ]; do
-          if curl -k -sf -o /dev/null "{{ gitlab_url }}/-/readiness"; then
-            echo "GitLab is ready!"
-            exit 0
-          fi
-          echo "GitLab not ready yet, waiting... (attempt $((attempt+1))/$max_attempts)"
-          sleep 10
-          attempt=$((attempt+1))
-        done
-        echo "GitLab did not become ready in time"
-        exit 1
+      args:
+        executable: /bin/bash
+
+    - name: Wait for GitLab readiness endpoint
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "Checking GitLab readiness endpoint..."
+        curl -k -sf -o /dev/null "{{ gitlab_url }}/-/readiness"
       args:
         executable: /bin/bash
       register: gitlab_ready
-      retries: 3
-      delay: 300
+      retries: 1200
+      delay: 1
       until: gitlab_ready.rc == 0
 
     - name: Get GitLab root password from Kubernetes secret
       ansible.builtin.shell: |
         set -euo pipefail
-        kubectl get secret gitlab-gitlab-initial-root-password -n gitlab -o jsonpath='{.data.password}' | base64 -d
+        kubectl get secret gitlab-initial-root-password -n gitlab -o jsonpath='{.data.password}' | base64 -d
       args:
         executable: /bin/bash
       register: gitlab_root_password_result
@@ -73,16 +66,6 @@
       ansible.builtin.set_fact:
         gitlab_access_token: "{{ access_token_result.stdout | trim }}"
     
-    - name: Get project ID
-      ansible.builtin.uri:
-        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | urlencode }}"
-        method: GET
-        headers:
-          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
-        status_code: 200
-        validate_certs: false
-      register: project_info
-
     - name: Create deploy token for Flux
       ansible.builtin.uri:
         url: "{{ gitlab_url }}/api/v4/projects/{{ project_info.json.id }}/deploy_tokens"
@@ -93,7 +76,7 @@
         body:
           name: "flux-deploy-token"
           scopes: ["read_repository"]
-          expires_at: "{{ '%Y-%m-%d' | strftime( ( ansible_date_time.epoch | int ) + ( 365 * 86400 ) ) }}"
+          expires_at: "{{ ((lookup('pipe','date +%s') | int) + (365 * 86400)) | strftime('%Y-%m-%d') }}"
         status_code: [201, 400]  # 400 if already exists
         validate_certs: false
       register: deploy_token_result
@@ -185,6 +168,16 @@
       failed_when:
         - gitlab_project.status not in [201, 400]
         - gitlab_project.status == 400 and 'has already been taken' not in (gitlab_project.json.message.name | default(['']))[0]
+
+    - name: Get project ID
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | urlencode }}"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        status_code: 200
+        validate_certs: false
+      register: project_info
 
     - name: Add in-cluster GitLab as git remote
       ansible.builtin.shell: |
