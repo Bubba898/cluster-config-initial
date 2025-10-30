@@ -10,12 +10,13 @@ This folder contains Ansible playbooks to bootstrap a k3s cluster with settings 
 - `requirements.yml`: Ansible Galaxy dependencies
 
 ### Scripts
-- `scripts/`: Helper shell scripts for GitLab and runner management
+- `scripts/`: Helper shell scripts for GitLab, runner, and Headlamp management
   - `create-gitlab-token.sh`: Create a Personal Access Token via GitLab API
   - `create-runner-token.sh`: Create a runner authentication token (new workflow)
   - `get-gitlab-credentials.sh`: Retrieve GitLab root password from cluster
   - `get-runner-token.sh`: Get runner registration token (⚠️ DEPRECATED)
   - `update-runner-token.sh`: Update runner token in an existing cluster
+  - `get-headlamp-token.sh`: Retrieve Headlamp authentication token
 
 ### Bootstrap Playbooks
 - `bootstrap.yml`: Main orchestration playbook that runs the complete setup
@@ -23,6 +24,7 @@ This folder contains Ansible playbooks to bootstrap a k3s cluster with settings 
 - `install-k3s.yml`: K3s cluster installation using xanmanning.k3s role
 - `setup-kubeconfig.yml`: Fetch and merge kubeconfig to local machine
 - `setup-flux.yml`: Install and configure Flux GitOps
+- `setup-headlamp-auth.yml`: Configure Headlamp dashboard authentication
 
 ### Maintenance Playbooks
 - `remove-k3s.yml`: Playbook to remove k3s and clean residual data
@@ -51,8 +53,9 @@ ansible-playbook -i inventory.ini bootstrap.yml
 This will:
 - Prepare nodes and install k3s
 - Set up kubeconfig on your local machine
-- Install Flux and deploy all applications (including GitLab)
+- Install Flux and deploy all applications (including GitLab and Headlamp)
 - **Automatically migrate Flux to use in-cluster GitLab** (once GitLab is ready)
+- **Configure Headlamp dashboard authentication** and display the access token
 
 ### Run individual bootstrap steps
 
@@ -167,6 +170,38 @@ This script will:
 - `get-gitlab-credentials.sh` - Retrieve GitLab credentials from cluster
 
 **Note**: Runner registration tokens (format: `glrtr-*`) are deprecated. The new workflow uses runner authentication tokens (format: `glrt-*`) which are more secure and provide better control over runner configuration.
+
+### Headlamp Dashboard Authentication
+
+The Headlamp Kubernetes dashboard is automatically configured during the bootstrap process with a user authentication token that has cluster-admin privileges.
+
+**Automatic Setup (during bootstrap)**:
+The `setup-headlamp-auth.yml` playbook automatically:
+- Creates a ServiceAccount (`headlamp-user`) with cluster-admin permissions
+- Generates a long-lived authentication token
+- Displays the token during bootstrap
+- Saves the token to `.headlamp-token.txt` (git-ignored for security)
+
+**Retrieve Token** (anytime after setup):
+```bash
+./scripts/get-headlamp-token.sh
+```
+
+Or retrieve it from the saved file:
+```bash
+cat .headlamp-token.txt
+```
+
+**Access Headlamp**:
+The dashboard is available at `https://headlamp.<INGRESS_IP>.sslip.io`
+
+When prompted for authentication, paste the token displayed during bootstrap or retrieved via the script above.
+
+**Security Note**: 
+- The token has **full cluster-admin privileges**
+- It is saved to `.headlamp-token.txt` which is automatically added to `.gitignore`
+- Store and share the token securely
+- The token does not expire
 
 ### Cluster Management Operations
 

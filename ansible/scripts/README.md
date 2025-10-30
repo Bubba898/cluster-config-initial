@@ -1,6 +1,6 @@
 # Ansible Helper Scripts
 
-This directory contains helper shell scripts for managing GitLab and GitLab Runner in the k3s cluster.
+This directory contains helper shell scripts for managing GitLab, GitLab Runner, and Headlamp in the k3s cluster.
 
 ## GitLab Credential Management
 
@@ -37,6 +37,28 @@ Creates a Personal Access Token (PAT) via GitLab API or retrieves an existing on
 - Creates a PAT with `api`, `write_repository`, and `read_repository` scopes
 - Returns existing token if one with the same name exists
 - Used automatically by Ansible playbooks
+
+---
+
+## Headlamp Dashboard Access
+
+### `get-headlamp-token.sh`
+Retrieves the authentication token for accessing the Headlamp Kubernetes dashboard.
+
+**Usage:**
+```bash
+./get-headlamp-token.sh
+```
+
+**What it does:**
+- Fetches the user authentication token from `headlamp-user-token` secret in `kube-system`
+- Displays the token for logging into Headlamp UI
+- This token has **cluster-admin** privileges
+
+**When to use:**
+- First time accessing Headlamp UI
+- Need to generate a new login token
+- Sharing access with team members
 
 ---
 
@@ -123,6 +145,7 @@ Use `create-runner-token.sh` instead, which creates runners with authentication 
 | `update-runner-token.sh` | Authentication Token | ✅ Recommended | Updates cluster |
 | `create-gitlab-token.sh` | PAT Creation | ✅ Active | `glpat-*` |
 | `get-gitlab-credentials.sh` | Credential Retrieval | ✅ Active | Password |
+| `get-headlamp-token.sh` | Token Retrieval | ✅ Active | JWT Token |
 
 ---
 

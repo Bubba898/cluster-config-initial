@@ -1,0 +1,152 @@
+---
+- name: Setup Headlamp User Authentication
+  hosts: localhost
+  become: false
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Verify kubectl is available
+      ansible.builtin.shell: |
+        set -euo pipefail
+        command -v kubectl >/dev/null 2>&1 || { echo "kubectl not found" >&2; exit 1; }
+      args:
+        executable: /bin/bash
+
+    - name: Wait for Headlamp deployment to be ready
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl wait --for=condition=available --timeout=5m -n headlamp deployment/headlamp || true
+      args:
+        executable: /bin/bash
+      ignore_errors: true
+
+    - name: Create Headlamp user ServiceAccount
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl apply -f - <<EOF
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: headlamp-user
+          namespace: kube-system
+        EOF
+      args:
+        executable: /bin/bash
+
+    - name: Create ClusterRoleBinding for Headlamp user
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl apply -f - <<EOF
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: headlamp-user-admin
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: cluster-admin
+        subjects:
+          - kind: ServiceAccount
+            name: headlamp-user
+            namespace: kube-system
+        EOF
+      args:
+        executable: /bin/bash
+
+    - name: Create long-lived token secret for Headlamp user
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl apply -f - <<EOF
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: headlamp-user-token
+          namespace: kube-system
+          annotations:
+            kubernetes.io/service-account.name: headlamp-user
+        type: kubernetes.io/service-account-token
+        EOF
+      args:
+        executable: /bin/bash
+
+    - name: Wait for token to be populated
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for i in {1..30}; do
+          if kubectl get secret headlamp-user-token -n kube-system -o jsonpath='{.data.token}' 2>/dev/null | base64 -d | grep -q .; then
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "Token was not populated after 30 seconds" >&2
+        exit 1
+      args:
+        executable: /bin/bash
+      retries: 3
+      delay: 2
+
+    - name: Retrieve Headlamp authentication token
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl get secret headlamp-user-token -n kube-system -o jsonpath='{.data.token}' | base64 -d
+      args:
+        executable: /bin/bash
+      register: headlamp_token
+      no_log: false
+
+    - name: Get Headlamp URL
+      ansible.builtin.shell: |
+        set -euo pipefail
+        INGRESS_IP=$(kubectl get configmap cluster-params -n flux-system -o jsonpath='{.data.INGRESS_IP}' 2>/dev/null || echo "UNKNOWN")
+        echo "https://headlamp.${INGRESS_IP}.sslip.io"
+      args:
+        executable: /bin/bash
+      register: headlamp_url
+      ignore_errors: true
+
+    - name: Display Headlamp authentication information
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════════════════╗"
+          - "║                   Headlamp Dashboard Authentication                       ║"
+          - "╚════════════════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "✓ Headlamp user authentication is configured!"
+          - ""
+          - "Headlamp URL: {{ headlamp_url.stdout }}"
+          - ""
+          - "Authentication Token (cluster-admin privileges):"
+          - "{{ headlamp_token.stdout }}"
+          - ""
+          - "To retrieve this token later, run:"
+          - "  cd ansible/scripts && ./get-headlamp-token.sh"
+          - ""
+          - "Note: Save this token securely - it has full cluster-admin access!"
+          - ""
+
+    - name: Save token to temporary file for easy access
+      ansible.builtin.copy:
+        content: |
+          Headlamp Authentication Token
+          ==============================
+          
+          URL: {{ headlamp_url.stdout }}
+          
+          Token (cluster-admin):
+          {{ headlamp_token.stdout }}
+          
+          This token has full cluster-admin privileges.
+          
+          To retrieve this token later, run:
+            cd ansible/scripts && ./get-headlamp-token.sh
+        dest: "{{ playbook_dir }}/../.headlamp-token.txt"
+        mode: '0600'
+
+    - name: Display token file location
+      ansible.builtin.debug:
+        msg:
+          - "Token has been saved to: {{ playbook_dir }}/../.headlamp-token.txt"
+          - ""
+
