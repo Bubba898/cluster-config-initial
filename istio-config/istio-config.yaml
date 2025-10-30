@@ -7,10 +7,20 @@ spec:
   selector:
     istio: ingressgateway
   servers:
+    # HTTP server with automatic redirect to HTTPS
     - port:
         number: 80
         name: http
         protocol: HTTP
+      hosts:
+        - "*.${INGRESS_IP}.sslip.io"
+      tls:
+        httpsRedirect: true
+    # HTTPS server with TLS
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
       hosts:
         - gitlab.${INGRESS_IP}.sslip.io
         - registry.${INGRESS_IP}.sslip.io
@@ -19,6 +29,9 @@ spec:
         - grafana.${INGRESS_IP}.sslip.io
         - prometheus.${INGRESS_IP}.sslip.io
         - jaeger.${INGRESS_IP}.sslip.io
+      tls:
+        mode: SIMPLE
+        credentialName: wildcard-sslip-tls
 ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService

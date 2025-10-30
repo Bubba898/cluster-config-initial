@@ -2,10 +2,20 @@
 set -euo pipefail
 
 # Script to retrieve GitLab runner registration token
+# ⚠️  WARNING: This uses the DEPRECATED runner registration token workflow
+# Runner registration tokens are scheduled for removal in GitLab 20.0
+# 
+# For new deployments, use create-runner-token.sh instead which creates
+# runner authentication tokens via the GitLab API (new workflow)
 
 echo "======================================================================"
-echo "GitLab Runner Registration Token Retriever"
+echo "GitLab Runner Registration Token Retriever (DEPRECATED)"
 echo "======================================================================"
+echo ""
+echo "⚠️  WARNING: Runner registration tokens are deprecated!"
+echo "    This workflow will be removed in GitLab 20.0"
+echo ""
+echo "    For the new workflow, use: create-runner-token.sh"
 echo ""
 
 # Check if kubectl is available

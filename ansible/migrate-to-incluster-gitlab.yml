@@ -67,7 +67,7 @@
 
     - name: Create or retrieve Personal Access Token for automation
       ansible.builtin.script:
-        cmd: "{{ playbook_dir }}/create-gitlab-token.sh '{{ gitlab_url }}' '{{ gitlab_root_password }}' '{{ gitlab_token_name }}'"
+        cmd: "{{ playbook_dir }}/scripts/create-gitlab-token.sh '{{ gitlab_url }}' '{{ gitlab_root_password }}' '{{ gitlab_token_name }}'"
         executable: /bin/bash
       register: access_token_result
       failed_when: access_token_result.rc != 0 or (access_token_result.stdout | trim) == ''
@@ -301,6 +301,73 @@
       args:
         executable: /bin/bash
 
+    - name: Wait for GitLab Runner HelmRelease to be created
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "Waiting for GitLab Runner HelmRelease to be created by Flux..."
+        max_attempts=30
+        attempt=0
+        while [ $attempt -lt $max_attempts ]; do
+          if kubectl get helmrelease gitlab-runner -n gitlab &>/dev/null; then
+            echo "GitLab Runner HelmRelease found!"
+            exit 0
+          fi
+          echo "Waiting for HelmRelease... (attempt $((attempt+1))/$max_attempts)"
+          sleep 10
+          attempt=$((attempt+1))
+        done
+        echo "GitLab Runner HelmRelease not found"
+        exit 1
+      args:
+        executable: /bin/bash
+      register: helmrelease_wait
+      retries: 2
+      delay: 10
+      until: helmrelease_wait.rc == 0
+
+    - name: Create GitLab Runner authentication token
+      ansible.builtin.shell: |
+        set -euo pipefail
+        # Wait a bit for GitLab to be fully ready for API calls
+        sleep 5
+        # Set AUTO_DELETE=true to automatically delete and recreate existing runners
+        export AUTO_DELETE=true
+        "{{ playbook_dir }}/scripts/create-runner-token.sh" "{{ gitlab_url }}" "{{ gitlab_access_token }}" "k3s-cluster-runner" | tail -1
+      args:
+        executable: /bin/bash
+      register: runner_token_result
+      retries: 3
+      delay: 10
+      until: runner_token_result.rc == 0 and (runner_token_result.stdout | trim) != ''
+
+    - name: Set runner token fact
+      ansible.builtin.set_fact:
+        gitlab_runner_token: "{{ runner_token_result.stdout | trim }}"
+
+    - name: Update GitLab Runner HelmRelease with authentication token
+      ansible.builtin.shell: |
+        set -euo pipefail
+        
+        # Update the runnerToken in the HelmRelease
+        kubectl patch helmrelease gitlab-runner -n gitlab --type=merge -p '{"spec":{"values":{"runnerToken":"{{ gitlab_runner_token }}"}}}'
+        
+        echo "✓ GitLab Runner HelmRelease updated with authentication token"
+        
+        # Force reconciliation of the HelmRelease
+        flux reconcile helmrelease gitlab-runner -n gitlab --timeout=5m || true
+        
+        echo "✓ Triggered GitLab Runner reconciliation"
+      args:
+        executable: /bin/bash
+      register: runner_update
+
+    - name: Display runner token info
+      ansible.builtin.debug:
+        msg:
+          - "✓ GitLab Runner authentication token created"
+          - "Token: {{ gitlab_runner_token }}"
+          - "This token has been automatically configured in the GitLab Runner HelmRelease"
+
     - name: Summary
       ansible.builtin.debug:
         msg:
@@ -319,10 +386,16 @@
           - "Authentication:"
           - "  Flux uses deploy token via Secret 'gitlab-auth' in namespace 'flux-system'"
           - ""
+          - "GitLab Runner:"
+          - "  ✓ Runner authentication token: {{ gitlab_runner_token }}"
+          - "  ✓ Runner configured automatically in HelmRelease"
+          - "  Check status: kubectl get pods -n gitlab -l app=gitlab-runner"
+          - ""
           - "You can now:"
           - "  1. Clone from external: git clone {{ gitlab_repo_url_external }}"
           - "  2. Push changes: git push incluster main"
           - "  3. Flux will automatically sync from in-cluster GitLab"
+          - "  4. GitLab Runner is ready to execute CI/CD pipelines"
           - ""
           - "To use the in-cluster GitLab as origin:"
           - "  git remote set-url origin {{ gitlab_repo_url_external }}"

@@ -1,0 +1,51 @@
+---
+- name: Stop k3s cluster
+  hosts: all
+  become: true
+
+  tasks:
+    # Stop workers first to avoid connection issues
+    - name: Stop k3s-agent service on worker nodes
+      ansible.builtin.systemd:
+        name: k3s-agent
+        state: stopped
+      when: inventory_hostname in groups['workers'] | default([])
+      register: worker_stop
+
+    - name: Wait for workers to stop
+      ansible.builtin.pause:
+        seconds: 10
+      when: inventory_hostname in groups['workers'] | default([])
+
+    # Then stop master nodes
+    - name: Stop k3s service on master nodes
+      ansible.builtin.systemd:
+        name: k3s
+        state: stopped
+      when: inventory_hostname in groups['master']
+      register: master_stop
+
+    - name: Verify k3s service is stopped on master
+      ansible.builtin.systemd:
+        name: k3s
+      register: k3s_status
+      failed_when: k3s_status.status.ActiveState == "active"
+      when: inventory_hostname in groups['master']
+
+    - name: Verify k3s-agent service is stopped on workers
+      ansible.builtin.systemd:
+        name: k3s-agent
+      register: agent_status
+      failed_when: agent_status.status.ActiveState == "active"
+      when: inventory_hostname in groups['workers'] | default([])
+
+    - name: Show stop status
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} k3s services stopped successfully"
+
+  post_tasks:
+    - name: Confirm cluster is stopped
+      ansible.builtin.debug:
+        msg: "k3s cluster has been stopped on all nodes"
+      run_once: true
+

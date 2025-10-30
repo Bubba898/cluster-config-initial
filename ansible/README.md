@@ -2,10 +2,20 @@
 
 This folder contains Ansible playbooks to bootstrap a k3s cluster with settings tailored to this repo (Istio instead of Traefik, Longhorn prerequisites, etc.).
 
-## Files
+## Files Structure
+
+### Configuration Files
 - `inventory.ini`: Define your nodes and SSH users
 - `group_vars/all.yml`: Role variables configuring k3s
 - `requirements.yml`: Ansible Galaxy dependencies
+
+### Scripts
+- `scripts/`: Helper shell scripts for GitLab and runner management
+  - `create-gitlab-token.sh`: Create a Personal Access Token via GitLab API
+  - `create-runner-token.sh`: Create a runner authentication token (new workflow)
+  - `get-gitlab-credentials.sh`: Retrieve GitLab root password from cluster
+  - `get-runner-token.sh`: Get runner registration token (⚠️ DEPRECATED)
+  - `update-runner-token.sh`: Update runner token in an existing cluster
 
 ### Bootstrap Playbooks
 - `bootstrap.yml`: Main orchestration playbook that runs the complete setup
@@ -18,6 +28,11 @@ This folder contains Ansible playbooks to bootstrap a k3s cluster with settings 
 - `remove-k3s.yml`: Playbook to remove k3s and clean residual data
 - `reset.yml`: Playbook that removes and re-bootstraps the cluster (combines remove-k3s.yml and bootstrap.yml)
 - `migrate-to-incluster-gitlab.yml`: Automate migration from external Git repo to in-cluster GitLab
+
+### Cluster Management Playbooks
+- `start-cluster.yml`: Start the k3s cluster services on all nodes
+- `stop-cluster.yml`: Stop the k3s cluster services on all nodes
+- `restart-cluster.yml`: Restart the k3s cluster services (useful after configuration changes)
 
 ## Usage
 1) Install role dependencies:
@@ -118,7 +133,61 @@ After migration, Flux will automatically sync from the in-cluster GitLab. You ca
 git push incluster main
 ```
 
-**To access GitLab UI**: Run `./get-gitlab-credentials.sh` to get the root password for manual login.
+**To access GitLab UI**: Run `./scripts/get-gitlab-credentials.sh` to get the root password for manual login.
+
+### GitLab Runner Token Management
+
+The GitLab Runner is automatically configured during the bootstrap process using the new runner authentication token workflow (introduced in GitLab 15.10).
+
+**Automatic Setup (during bootstrap)**:
+The `migrate-to-incluster-gitlab.yml` playbook automatically:
+- Creates a new GitLab Runner via the GitLab API
+- Retrieves the runner authentication token (format: `glrt-*`)
+- Updates the GitLab Runner HelmRelease with the token
+- The runner is immediately available for CI/CD pipelines
+
+**Manual Token Update** (if needed):
+If you need to regenerate the runner token after initial setup:
+
+```bash
+./scripts/update-runner-token.sh
+```
+
+This script will:
+1. Retrieve GitLab credentials from the cluster
+2. Create a new runner authentication token via GitLab API
+3. Update the GitLab Runner HelmRelease
+4. Trigger reconciliation to apply changes
+
+**Scripts Available** (in `scripts/` directory):
+- `create-runner-token.sh` - Create a new runner authentication token (new workflow, recommended)
+- `update-runner-token.sh` - Update runner token in an existing cluster
+- `get-runner-token.sh` - Get runner registration token (⚠️ DEPRECATED, will be removed in GitLab 20.0)
+- `create-gitlab-token.sh` - Create GitLab Personal Access Token via API
+- `get-gitlab-credentials.sh` - Retrieve GitLab credentials from cluster
+
+**Note**: Runner registration tokens (format: `glrtr-*`) are deprecated. The new workflow uses runner authentication tokens (format: `glrt-*`) which are more secure and provide better control over runner configuration.
+
+### Cluster Management Operations
+
+Use these playbooks to manage your running cluster:
+
+**Start the cluster** (after a shutdown or node reboot):
+```bash
+ansible-playbook -i inventory.ini start-cluster.yml
+```
+
+**Stop the cluster** (graceful shutdown):
+```bash
+ansible-playbook -i inventory.ini stop-cluster.yml
+```
+
+**Restart the cluster** (after configuration changes or to resolve issues):
+```bash
+ansible-playbook -i inventory.ini restart-cluster.yml
+```
+
+These playbooks handle master and worker nodes in the correct order to ensure cluster stability. The restart playbook also displays cluster status and pod health after completion.
 
 Notes:
 - The playbook disables swap, installs open-iscsi and nfs-common for Longhorn, and disables Traefik so Istio handles ingress.

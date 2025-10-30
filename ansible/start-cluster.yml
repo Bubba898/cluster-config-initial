@@ -1,0 +1,64 @@
+---
+- name: Start k3s cluster
+  hosts: all
+  become: true
+  serial: 1  # Process nodes one at a time to ensure proper startup order
+
+  tasks:
+    - name: Start k3s service on master nodes
+      ansible.builtin.systemd:
+        name: k3s
+        state: started
+        enabled: true
+      when: inventory_hostname in groups['master']
+      register: master_start
+
+    - name: Wait for k3s to be ready on master
+      ansible.builtin.wait_for:
+        port: 6443
+        delay: 5
+        timeout: 300
+      when: inventory_hostname in groups['master']
+
+    - name: Verify k3s API is responding on master
+      ansible.builtin.uri:
+        url: "https://{{ ansible_host }}:6443/healthz"
+        validate_certs: false
+        status_code: 200
+      retries: 30
+      delay: 2
+      register: api_health
+      until: api_health.status == 200
+      when: inventory_hostname in groups['master']
+
+    - name: Start k3s-agent service on worker nodes
+      ansible.builtin.systemd:
+        name: k3s-agent
+        state: started
+        enabled: true
+      when: inventory_hostname in groups['workers'] | default([])
+      register: worker_start
+
+    - name: Wait for worker nodes to be ready
+      ansible.builtin.pause:
+        seconds: 10
+      when: inventory_hostname in groups['workers'] | default([])
+
+    - name: Show start status
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} k3s services started successfully"
+
+  post_tasks:
+    - name: Display cluster status on master
+      ansible.builtin.shell: kubectl get nodes
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: cluster_status
+      changed_when: false
+      when: inventory_hostname in groups['master']
+
+    - name: Show cluster nodes
+      ansible.builtin.debug:
+        var: cluster_status.stdout_lines
+      when: inventory_hostname in groups['master'] and cluster_status.stdout_lines is defined
+
