@@ -129,16 +129,19 @@ spec:
     runners:
       privileged: true
       image: ubuntu:22.04
+      services:
+        - name: docker:dind
+          command: ["--insecure-registry=gitlab-registry.gitlab.svc.cluster.local:5000"]
       config: |
         [[runners]]
           clone_url = "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
           environment = [
-            "DOCKER_TLS_CERTDIR="
+            "DOCKER_TLS_CERTDIR=",
+            "DOCKER_HOST=tcp://docker:2375"
           ]
           pre_build_script = """
             # Override any registry variables that might use external hostnames
-            # Use http:// prefix to explicitly tell Docker to use HTTP instead of HTTPS
-            export CI_REGISTRY="http://gitlab-registry.gitlab.svc.cluster.local:5000"
+            export CI_REGISTRY="gitlab-registry.gitlab.svc.cluster.local:5000"
             export CI_REGISTRY_IMAGE="$$CI_REGISTRY/$$CI_PROJECT_PATH"
             
             echo "Using internal registry: $$CI_REGISTRY"
@@ -148,14 +151,6 @@ spec:
             namespace = "{{.Release.Namespace}}"
             image = "ubuntu:22.04"
             privileged = true
-            [[runners.kubernetes.volumes.empty_dir]]
-              name = "docker-certs"
-              mount_path = "/certs/client"
-              medium = "Memory"
-          [runners.kubernetes.services]
-            [[runners.kubernetes.services.service]]
-              name = "docker:dind"
-              command = ["dockerd", "--host=unix:///var/run/docker.sock", "--insecure-registry=gitlab-registry.gitlab.svc.cluster.local:5000", "--insecure-registry=registry.gitlab.svc.cluster.local:5000"]
     securityContext:
       allowPrivilegeEscalation: true
       privileged: true
