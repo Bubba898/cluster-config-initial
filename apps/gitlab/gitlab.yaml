@@ -47,6 +47,10 @@ spec:
         kind: HelmRepository
         name: gitlab
         namespace: flux-system
+  install:
+    crds: Skip
+  upgrade:
+    crds: Skip
   values:
     global:
       edition: ce
@@ -76,6 +80,8 @@ spec:
       storage:
         class: longhorn
     nginx-ingress:
+      enabled: false
+    certmanager-issuer:
       enabled: false
     prometheus:
       install: false
