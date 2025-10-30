@@ -46,6 +46,7 @@ spec:
       hosts:
         - gitlab.${INGRESS_IP}.sslip.io
         - registry.${INGRESS_IP}.sslip.io
+        - minio.${INGRESS_IP}.sslip.io
         - headlamp.${INGRESS_IP}.sslip.io
         - kiali.${INGRESS_IP}.sslip.io
         - grafana.${INGRESS_IP}.sslip.io

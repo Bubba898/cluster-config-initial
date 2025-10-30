@@ -1,0 +1,217 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitlab
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: gitlab
+  namespace: flux-system
+spec:
+  interval: 1h0m0s
+  url: https://charts.gitlab.io/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  interval: 10m0s
+  timeout: 30m0s
+  chart:
+    spec:
+      chart: gitlab
+      version: "8.*"
+      sourceRef:
+        kind: HelmRepository
+        name: gitlab
+        namespace: flux-system
+  # Allow GitLab installation to take time
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    global:
+      # Edition: CE (Community Edition) or EE (Enterprise Edition)
+      edition: ce
+      installCertmanager: false
+
+      ## Configuration of jetstack/cert-manager
+      certmanager:
+        installCRDs: false
+
+      # Host configuration
+      hosts:
+        domain: ${INGRESS_IP}.sslip.io
+        https: true
+        gitlab:
+          name: gitlab.${INGRESS_IP}.sslip.io
+        registry:
+          name: registry.${INGRESS_IP}.sslip.io
+        minio:
+          name: minio.${INGRESS_IP}.sslip.io
+      
+      # Ingress configuration - disable built-in ingress, use Istio instead
+      ingress:
+        enabled: false
+        configureCertmanager: false
+
+      # Initial root password from secret (created by Ansible)
+      initialRootPassword:
+        secret: gitlab-initial-root-password
+        key: password
+
+      
+      # PostgreSQL configuration
+      psql:
+        password:
+          secret: gitlab-postgresql-password
+          key: password
+      
+      # Redis configuration
+      redis:
+        auth:
+          enabled: true
+          secret: gitlab-redis-password
+          key: password
+      
+
+    # Disable NGINX ingress controller (using Istio)
+    nginx-ingress:
+      enabled: false
+    
+    # PostgreSQL configuration
+    postgresql:
+      install: true
+      auth:
+        usePasswordFiles: false
+        existingSecret: gitlab-postgresql-password
+        secretKeys:
+          adminPasswordKey: password
+          userPasswordKey: password
+      primary:
+        persistence:
+          enabled: true
+          size: 8Gi
+          storageClass: longhorn
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+    
+    # Redis configuration
+    redis:
+      install: true
+      auth:
+        enabled: true
+        existingSecret: gitlab-redis-password
+        existingSecretPasswordKey: password
+      master:
+        persistence:
+          enabled: true
+          size: 5Gi
+          storageClass: longhorn
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+    
+    # Disable Prometheus (use existing observability stack if available)
+    prometheus:
+      install: false
+    
+    # GitLab Runner configuration (disabled by default)
+    gitlab-runner:
+      install: false
+
+    minio:
+      persistence:
+        enabled: true
+        size: 10Gi
+        storageClass: longhorn
+    
+
+    # GitLab component configurations
+    gitlab:
+        # Webservice configuration
+      webservice:
+        minReplicas: 1
+        maxReplicas: 1
+        resources:
+          requests:
+            cpu: 200m
+            memory: 1Gi
+          limits:
+            memory: 2Gi
+        workhorse:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+      
+---
+# VirtualService for GitLab web interface
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  hosts:
+    - gitlab.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: gitlab-webservice-default.gitlab.svc.cluster.local
+            port:
+              number: 8181
+---
+# VirtualService for GitLab Registry
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gitlab-registry
+  namespace: gitlab
+spec:
+  hosts:
+    - registry.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: gitlab-registry.gitlab.svc.cluster.local
+            port:
+              number: 5000
+---
+# VirtualService for MinIO (optional, for admin access)
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gitlab-minio
+  namespace: gitlab
+spec:
+  hosts:
+    - minio.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: gitlab-minio-svc.gitlab.svc.cluster.local
+            port:
+              number: 9000
+
