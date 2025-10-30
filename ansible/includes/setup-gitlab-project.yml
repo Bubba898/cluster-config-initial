@@ -1,0 +1,236 @@
+---
+- name: Setup GitLab Project and Push Repository
+  hosts: localhost
+  become: false
+  connection: local
+  gather_facts: false
+
+  vars:
+    gitlab_host: "gitlab.{{ ingress_ip }}.sslip.io"
+    gitlab_url: "https://{{ gitlab_host }}"
+    gitlab_project_namespace: "infrastructure"
+    gitlab_project_name: "cluster-config"
+    gitlab_project_path: "{{ gitlab_project_namespace }}/{{ gitlab_project_name }}"
+    gitlab_token_name: "ansible-automation"
+
+  tasks:
+    - name: Wait for GitLab webservice pod to be ready
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "Waiting for GitLab webservice pod to be ready..."
+        kubectl wait --for=condition=ready pod \
+          -l app=webservice \
+          -n gitlab \
+          --timeout=10m
+      args:
+        executable: /bin/bash
+      register: gitlab_webservice_ready
+      retries: 120
+      delay: 10
+      until: gitlab_webservice_ready.rc == 0
+
+    - name: Wait for GitLab readiness endpoint
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "Checking GitLab readiness endpoint..."
+        curl -k -sf -o /dev/null "{{ gitlab_url }}/-/readiness"
+      args:
+        executable: /bin/bash
+      register: gitlab_ready
+      retries: 300
+      delay: 1
+      until: gitlab_ready.rc == 0
+
+    - name: Get GitLab root password from Kubernetes secret
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl get secret gitlab-initial-root-password -n gitlab -o jsonpath='{.data.password}' | base64 -d
+      args:
+        executable: /bin/bash
+      register: gitlab_root_password_result
+      changed_when: false
+
+    - name: Set GitLab root password fact
+      ansible.builtin.set_fact:
+        gitlab_root_password: "{{ gitlab_root_password_result.stdout }}"
+
+    - name: Create or retrieve Personal Access Token for automation
+      ansible.builtin.script:
+        cmd: "{{ playbook_dir }}/../scripts/create-gitlab-token.sh '{{ gitlab_url }}' '{{ gitlab_root_password }}' '{{ gitlab_token_name }}'"
+        executable: /bin/bash
+      register: access_token_result
+      failed_when: access_token_result.rc != 0 or (access_token_result.stdout | trim) == ''
+      retries: 3
+      delay: 10
+      until: access_token_result.rc == 0 and (access_token_result.stdout | trim) != ''
+
+    - name: Set GitLab access token fact
+      ansible.builtin.set_fact:
+        gitlab_access_token: "{{ access_token_result.stdout | trim }}"
+
+    - name: Check if GitLab group exists
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/groups/{{ gitlab_project_namespace }}"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        status_code: [200, 404]
+        validate_certs: false
+      register: group_info
+      changed_when: false
+
+    - name: Create GitLab group
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/groups"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        body_format: json
+        body:
+          name: "{{ gitlab_project_namespace }}"
+          path: "{{ gitlab_project_namespace }}"
+          visibility: "private"
+        status_code: [201]
+        validate_certs: false
+      register: gitlab_group_created
+      when: group_info.status == 404
+      failed_when: gitlab_group_created.status != 201
+
+    - name: Get group info
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/groups/{{ gitlab_project_namespace }}"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        status_code: 200
+        validate_certs: false
+      register: group_info_final
+      changed_when: false
+
+    - name: Set group_id fact
+      ansible.builtin.set_fact:
+        group_id: "{{ group_info_final.json.id }}"
+
+    - name: Check if GitLab project exists
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | urlencode }}"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        status_code: [200, 404]
+        validate_certs: false
+      register: project_info
+      changed_when: false
+
+    - name: Create GitLab project
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        body_format: json
+        body:
+          name: "{{ gitlab_project_name }}"
+          namespace_id: "{{ group_id }}"
+          visibility: "private"
+          initialize_with_readme: false
+        status_code: [201, 400]
+        validate_certs: false
+      register: project_created
+      when: project_info.status == 404
+      changed_when: project_created.status == 201
+
+    - name: Get project info (existing project)
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | urlencode }}"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        status_code: 200
+        validate_certs: false
+      register: project_info_final
+      changed_when: false
+      when: project_info.status == 200
+
+    - name: Set project_id from creation response (newly created)
+      ansible.builtin.set_fact:
+        project_id: "{{ project_created.json.id }}"
+      when: project_info.status == 404 and project_created is defined and project_created.status == 201
+
+    - name: Set project_id fact
+      ansible.builtin.set_fact:
+        project_id: "{{ project_info_final.json.id }}"
+      when: project_info.status == 200
+
+    - name: Get project info to resolve ID (created earlier or exists)
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | urlencode }}"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        status_code: 200
+        validate_certs: false
+      register: project_info_final_retry
+      changed_when: false
+      retries: 60
+      delay: 2
+      until: project_info_final_retry.status == 200
+      when: project_id is not defined
+
+    - name: Set project_id from resolved project info
+      ansible.builtin.set_fact:
+        project_id: "{{ (project_info_final_retry.json.id if project_info_final_retry is defined else project_info_final.json.id) }}"
+      when: project_id is not defined
+
+    - name: Set project_created fact
+      ansible.builtin.set_fact:
+        project_was_created: "{{ project_info.status == 404 }}"
+
+    - name: Add in-cluster GitLab as git remote
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd "{{ playbook_dir }}/../.."
+        
+        # Check if remote exists
+        if git remote get-url incluster &>/dev/null; then
+          echo "Remote 'incluster' already exists, removing old one"
+          git remote remove incluster
+        fi
+        
+        # Add the new remote (using external URL for push from local machine)
+        git remote add incluster "https://oauth2:{{ gitlab_access_token }}@{{ gitlab_host }}/{{ gitlab_project_path }}.git"
+        
+        # Configure git to skip SSL verification for this remote (self-signed cert)
+        git config "http.https://{{ gitlab_host }}.sslverify" false
+        
+        echo "Git remote 'incluster' added successfully"
+      args:
+        executable: /bin/bash
+
+    - name: Push repository to in-cluster GitLab
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd "{{ playbook_dir }}/../.."
+        
+        # Push all branches
+        git push incluster --all --force
+        
+        # Push all tags
+        git push incluster --tags --force || true
+        
+        echo "Repository pushed to in-cluster GitLab successfully"
+      args:
+        executable: /bin/bash
+      register: git_push
+      when: project_info.status == 404
+      retries: 3
+      delay: 5
+      until: git_push.rc == 0
+
+    - name: Display success message
+      ansible.builtin.debug:
+        msg:
+          - "✓ GitLab project setup complete"
+          - "Project: {{ gitlab_url }}/{{ gitlab_project_path }}"
+          - "Project ID: {{ project_id }}"
+

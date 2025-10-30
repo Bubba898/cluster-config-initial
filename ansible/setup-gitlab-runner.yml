@@ -1,0 +1,123 @@
+---
+- name: Setup GitLab Runner Authentication
+  hosts: localhost
+  become: false
+  connection: local
+  gather_facts: false
+
+  vars:
+    gitlab_host: "gitlab.{{ ingress_ip }}.sslip.io"
+    gitlab_url: "https://{{ gitlab_host }}"
+    gitlab_token_name: "ansible-automation"
+    runner_name: "k3s-cluster-runner"
+
+  tasks:
+    - name: Set facts from previous playbook
+      ansible.builtin.set_fact:
+        gitlab_access_token: "{{ hostvars['localhost'].gitlab_access_token | default(omit) }}"
+      fail_msg: "Required fact from setup-gitlab-project.yml is missing. Make sure to run the playbooks in order."
+
+    - name: Wait for GitLab Runner HelmRelease to be created
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "Waiting for GitLab Runner HelmRelease to be created by Flux..."
+        max_attempts=30
+        attempt=0
+        while [ $attempt -lt $max_attempts ]; do
+          if kubectl get helmrelease gitlab-runner -n gitlab &>/dev/null; then
+            echo "GitLab Runner HelmRelease found!"
+            exit 0
+          fi
+          echo "Waiting for HelmRelease... (attempt $((attempt+1))/$max_attempts)"
+          sleep 10
+          attempt=$((attempt+1))
+        done
+        echo "GitLab Runner HelmRelease not found"
+        exit 1
+      args:
+        executable: /bin/bash
+      register: helmrelease_wait
+      retries: 2
+      delay: 10
+      until: helmrelease_wait.rc == 0
+
+    - name: Check if runner secret exists
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if kubectl get secret gitlab-runner-auth -n gitlab &>/dev/null; then
+          echo "exists"
+        else
+          echo "notexists"
+        fi
+      args:
+        executable: /bin/bash
+      register: runner_secret_check
+      changed_when: false
+
+    - name: Check if runner token exists
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if [ "{{ runner_secret_check.stdout }}" = "exists" ]; then
+          kubectl get secret gitlab-runner-auth -n gitlab -o jsonpath='{.data.runner-token}' | base64 -d
+        else
+          echo ""
+        fi
+      args:
+        executable: /bin/bash
+      register: existing_runner_token
+      changed_when: false
+      when: runner_secret_check.stdout == "exists"
+
+    - name: Create GitLab Runner authentication token
+      ansible.builtin.shell: |
+        set -euo pipefail
+        # Wait a bit for GitLab to be fully ready for API calls
+        sleep 5
+        # Set AUTO_DELETE=true to automatically delete and recreate existing runners
+        export AUTO_DELETE=true
+        "{{ playbook_dir }}/scripts/create-runner-token.sh" "{{ gitlab_url }}" "{{ gitlab_access_token }}" "{{ runner_name }}" | tail -1
+      args:
+        executable: /bin/bash
+      register: runner_token_result
+      retries: 3
+      delay: 10
+      until: runner_token_result.rc == 0 and (runner_token_result.stdout | trim) != ''
+      when: runner_secret_check.stdout == "notexists"
+
+    - name: Set runner token fact from existing secret
+      ansible.builtin.set_fact:
+        gitlab_runner_token: "{{ existing_runner_token.stdout | trim }}"
+      when: runner_secret_check.stdout == "exists" and existing_runner_token.stdout | trim != ""
+
+    - name: Set runner token fact from new creation
+      ansible.builtin.set_fact:
+        gitlab_runner_token: "{{ runner_token_result.stdout | trim }}"
+      when: runner_secret_check.stdout == "notexists"
+
+    - name: Create GitLab Runner authentication token Secret
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: gitlab-runner-auth
+          namespace: gitlab
+        type: Opaque
+        stringData:
+          runner-token: "{{ gitlab_runner_token }}"
+        EOF
+        echo "✓ GitLab Runner token secret applied"
+      args:
+        executable: /bin/bash
+      register: runner_update
+      when: runner_secret_check.stdout == "notexists"
+
+    - name: Display runner token info
+      ansible.builtin.debug:
+        msg:
+          - "✓ GitLab Runner authentication configured"
+          - "Token: {{ gitlab_runner_token }}"
+          - "Secret: gitlab-runner-auth in gitlab namespace"
+          - "This token has been configured in the GitLab Runner HelmRelease"
+

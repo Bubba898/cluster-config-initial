@@ -141,12 +141,12 @@
           
           To retrieve this token later, run:
             cd ansible/scripts && ./get-headlamp-token.sh
-        dest: "{{ playbook_dir }}/../.headlamp-token.txt"
+        dest: "{{ playbook_dir }}/../../.headlamp-token.txt"
         mode: '0600'
 
     - name: Display token file location
       ansible.builtin.debug:
         msg:
-          - "Token has been saved to: {{ playbook_dir }}/../.headlamp-token.txt"
+          - "Token has been saved to: {{ playbook_dir }}/../../.headlamp-token.txt"
           - ""
 

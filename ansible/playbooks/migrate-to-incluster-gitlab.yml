@@ -1,12 +1,12 @@
 ---
 - name: Migrate Flux to In-Cluster GitLab
-  ansible.builtin.import_playbook: setup-gitlab-project.yml
+  ansible.builtin.import_playbook: ../includes/setup-gitlab-project.yml
 
 - name: Setup Flux Authentication
-  ansible.builtin.import_playbook: setup-flux-auth.yml
+  ansible.builtin.import_playbook: ../includes/setup-flux-auth.yml
 
 - name: Setup GitLab Runner Authentication
-  ansible.builtin.import_playbook: setup-gitlab-runner.yml
+  ansible.builtin.import_playbook: ../includes/setup-gitlab-runner.yml
 
 - name: Display Migration Summary
   hosts: localhost

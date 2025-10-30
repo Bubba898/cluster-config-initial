@@ -220,3 +220,24 @@ spec:
             port:
               number: 9000
 
+---
+# VirtualService for Git over SSH (TCP 22)
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gitlab-ssh
+  namespace: gitlab
+spec:
+  hosts:
+    - gitlab.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  tcp:
+    - match:
+        - port: 22
+      route:
+        - destination:
+            host: gitlab-gitlab-shell.gitlab.svc.cluster.local
+            port:
+              number: 22
+

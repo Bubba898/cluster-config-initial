@@ -56,6 +56,13 @@ spec:
       tls:
         mode: SIMPLE
         credentialName: wildcard-sslip-tls
+    # TCP server for Git SSH
+    - port:
+        number: 22
+        name: tcp-git-ssh
+        protocol: TCP
+      hosts:
+        - gitlab.${INGRESS_IP}.sslip.io
 ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService

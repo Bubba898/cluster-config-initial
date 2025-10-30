@@ -98,6 +98,9 @@ spec:
         - name: https
           port: 443
           targetPort: 8443
+        - name: tcp-git-ssh
+          port: 22
+          targetPort: 22
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

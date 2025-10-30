@@ -44,14 +44,25 @@
     - name: Install or upgrade Flux controllers
       ansible.builtin.shell: |
         set -euo pipefail
-        flux install
+        flux install --timeout=10m
       args:
         executable: /bin/bash
+
+    - name: Wait for Flux controller deployments to be ready
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for d in helm-controller kustomize-controller notification-controller source-controller; do
+          kubectl -n flux-system rollout status deploy/$d --timeout=10m
+        done
+      args:
+        executable: /bin/bash
+      retries: 2
+      delay: 15
 
     - name: Apply Flux Git sync manifests
       ansible.builtin.shell: |
         set -euo pipefail
-        sed "s|<BOOTSTRAP_GIT_REPO_URL>|{{ bootstrap_git_repo_url }}|g" "{{ playbook_dir }}/../clusters/home/flux-system/gotk-sync.yaml" | kubectl apply -f -
+        sed "s|<BOOTSTRAP_GIT_REPO_URL>|{{ bootstrap_git_repo_url }}|g" "{{ playbook_dir }}/../../clusters/home/flux-system/gotk-sync.yaml" | kubectl apply -f -
       args:
         executable: /bin/bash
 

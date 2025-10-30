@@ -1,0 +1,236 @@
+---
+- name: Setup Flux Authentication
+  hosts: localhost
+  become: false
+  connection: local
+  gather_facts: false
+
+  vars:
+    gitlab_host: "gitlab.{{ ingress_ip }}.sslip.io"
+    gitlab_url: "https://{{ gitlab_host }}"
+    gitlab_internal_host: "gitlab-webservice-default.gitlab.svc.cluster.local:8181"
+    gitlab_internal_url: "http://{{ gitlab_internal_host }}"
+    gitlab_project_namespace: "infrastructure"
+    gitlab_project_name: "cluster-config"
+    gitlab_project_path: "{{ gitlab_project_namespace }}/{{ gitlab_project_name }}"
+    gitlab_token_name: "ansible-automation"
+
+  tasks:
+    - name: Set facts from previous playbook
+      ansible.builtin.set_fact:
+        gitlab_access_token: "{{ hostvars['localhost'].gitlab_access_token | default(omit) }}"
+        project_id: "{{ hostvars['localhost'].project_id | default(omit) }}"
+        project_was_created: "{{ hostvars['localhost'].project_was_created | default(false) }}"
+      fail_msg: "Required facts from setup-gitlab-project.yml are missing. Make sure to run the playbooks in order."
+
+    - name: Get existing deploy tokens
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ project_id }}/deploy_tokens"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        status_code: [200]
+        validate_certs: false
+      register: existing_tokens
+      changed_when: false
+
+    - name: Check if flux deploy token exists
+      ansible.builtin.set_fact:
+        flux_deploy_token: "{{ existing_tokens.json | selectattr('name', 'equalto', 'flux-deploy-token') | list | first }}"
+      changed_when: false
+
+    - name: Check if gitlab-auth secret exists
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if kubectl get secret gitlab-auth -n flux-system &>/dev/null; then
+          echo "exists"
+        else
+          echo "notexists"
+        fi
+      args:
+        executable: /bin/bash
+      register: secret_check
+      changed_when: false
+
+    - name: Get existing secret credentials
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if [ "{{ secret_check.stdout }}" = "exists" ]; then
+          echo "username=$(kubectl get secret gitlab-auth -n flux-system -o jsonpath='{.data.username}' | base64 -d)"
+          echo "password=$(kubectl get secret gitlab-auth -n flux-system -o jsonpath='{.data.password}' | base64 -d)"
+        fi
+      args:
+        executable: /bin/bash
+      register: existing_secret
+      changed_when: false
+      when: secret_check.stdout == "exists"
+
+    - name: Set existing credentials from secret
+      ansible.builtin.set_fact:
+        deploy_token_username: "{{ existing_secret.stdout_lines[0] | regex_replace('username=', '') }}"
+        deploy_token_password: "{{ existing_secret.stdout_lines[1] | regex_replace('password=', '') }}"
+      when: secret_check.stdout == "exists"
+
+    - name: Delete existing flux deploy token if secret doesn't exist
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ project_id }}/deploy_tokens/{{ flux_deploy_token.id }}"
+        method: DELETE
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        status_code: [204, 404]
+        validate_certs: false
+      when: flux_deploy_token is defined and secret_check.stdout == "notexists"
+
+    - name: Create deploy token for Flux
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ project_id }}/deploy_tokens"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
+        body_format: json
+        body:
+          name: "flux-deploy-token"
+          scopes: ["read_repository"]
+          expires_at: "{{ lookup('pipe','date -u -v+365d +%Y-%m-%d') }}"
+        status_code: [201]
+        validate_certs: false
+      register: deploy_token_result
+      failed_when: deploy_token_result.status != 201
+      when: secret_check.stdout == "notexists"
+
+    - name: Set deploy token facts from new creation
+      ansible.builtin.set_fact:
+        deploy_token_username: "{{ deploy_token_result.json.username }}"
+        deploy_token_password: "{{ deploy_token_result.json.token }}"
+      when: secret_check.stdout == "notexists"
+
+    - name: Set GitLab repository URLs
+      ansible.builtin.set_fact:
+        gitlab_repo_url_internal_clean: "http://{{ gitlab_internal_host }}/{{ gitlab_project_path }}.git"
+
+    - name: Create Kubernetes Secret for GitLab authentication
+      ansible.builtin.shell: |
+        set -euo pipefail
+        
+        # Create secret with GitLab deploy token credentials for Flux
+        kubectl create secret generic gitlab-auth \
+          --namespace=flux-system \
+          --from-literal=username='{{ deploy_token_username }}' \
+          --from-literal=password='{{ deploy_token_password }}' \
+          --dry-run=client -o yaml | kubectl apply -f -
+        
+        echo "GitLab authentication secret created with deploy token"
+      args:
+        executable: /bin/bash
+      when: secret_check.stdout == "notexists"
+
+    - name: Update Flux GitRepository with secretRef
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd "{{ playbook_dir }}/.."
+        
+        FILE="clusters/home/flux-system/gotk-sync.yaml"
+        
+        # Check if secretRef is already present
+        if grep -q "secretRef:" "$FILE"; then
+          echo "secretRef already present in gotk-sync.yaml, skipping"
+          exit 0
+        fi
+        
+        # Use awk to add secretRef after 'branch: main' in the GitRepository spec
+        awk '
+          /^apiVersion: source.toolkit.fluxcd.io/ { in_gitrepo=1 }
+          in_gitrepo && /^---/ { in_gitrepo=0 }
+          in_gitrepo && /branch: main/ { 
+            print $0
+            print "  secretRef:"
+            print "    name: gitlab-auth"
+            next
+          }
+          { print }
+        ' "$FILE" > "${FILE}.tmp"
+        
+        mv "${FILE}.tmp" "$FILE"
+        
+        # Stage the change
+        git add "$FILE"
+        
+        # Check if there are changes to commit
+        if git diff --cached --quiet; then
+          echo "No changes to commit"
+          exit 0
+        fi
+        
+        # Commit the change
+        git commit -m "Add gitlab-auth secretRef to Flux GitRepository
+
+        This secret is created during the migration to in-cluster GitLab
+        and contains the deploy token credentials for Flux to authenticate
+        with the GitLab repository."
+        
+        # Push to in-cluster GitLab
+        git push incluster main
+        
+        echo "✓ gitlab-auth secretRef added and pushed to in-cluster GitLab"
+      args:
+        executable: /bin/bash
+      register: add_secret_ref
+      when: project_was_created
+
+    - name: Update Flux to use in-cluster GitLab
+      ansible.builtin.shell: |
+        set -euo pipefail
+        
+        # Update the cluster-params ConfigMap
+        kubectl -n flux-system create configmap cluster-params \
+          --from-literal=INGRESS_IP='{{ ingress_ip }}' \
+          --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Create a clean URL without embedded credentials
+        CLEAN_URL="http://{{ gitlab_internal_host }}/{{ gitlab_project_path }}.git"
+        
+        # Update the GitRepository resource with clean URL and secretRef
+        cat <<EOF | kubectl apply -f -
+        apiVersion: source.toolkit.fluxcd.io/v1
+        kind: GitRepository
+        metadata:
+          name: cluster-config
+          namespace: flux-system
+        spec:
+          interval: 1m0s
+          ref:
+            branch: main
+          secretRef:
+            name: gitlab-auth
+          url: $CLEAN_URL
+        EOF
+        
+        # Force reconcile the GitRepository
+        flux reconcile source git cluster-config --timeout=5m
+        
+        echo "Flux successfully migrated to in-cluster GitLab!"
+      args:
+        executable: /bin/bash
+
+    - name: Verify Flux reconciliation
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "Verifying Flux is syncing from in-cluster GitLab..."
+        
+        # Check GitRepository source
+        kubectl wait --for=condition=Ready --timeout=5m -n flux-system gitrepository/cluster-config
+        
+        # Display the current source URL
+        kubectl get gitrepository cluster-config -n flux-system -o jsonpath='{.spec.url}'
+        echo ""
+      args:
+        executable: /bin/bash
+
+    - name: Display success message
+      ansible.builtin.debug:
+        msg:
+          - "✓ Flux authentication setup complete"
+          - "Deploy token username: {{ deploy_token_username }}"
+          - "Kubernetes Secret created: gitlab-auth in flux-system namespace"
+          - "Flux GitRepository updated and reconciled"
+

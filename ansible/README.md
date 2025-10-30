@@ -18,18 +18,34 @@ This folder contains Ansible playbooks to bootstrap a k3s cluster with settings 
   - `update-runner-token.sh`: Update runner token in an existing cluster
   - `get-headlamp-token.sh`: Retrieve Headlamp authentication token
 
-### Bootstrap Playbooks
-- `bootstrap.yml`: Main orchestration playbook that runs the complete setup
-- `prepare-nodes.yml`: System preparation (packages, swap disable, iscsid)
-- `install-k3s.yml`: K3s cluster installation using xanmanning.k3s role
-- `setup-kubeconfig.yml`: Fetch and merge kubeconfig to local machine
-- `setup-flux.yml`: Install and configure Flux GitOps
-- `setup-headlamp-auth.yml`: Configure Headlamp dashboard authentication
+### Entrypoint Playbooks (run these directly)
+- `playbooks/bootstrap.yml`: Main orchestration playbook that runs the complete setup
+- `playbooks/reset.yml`: Remove and re-bootstrap the cluster (calls remove + bootstrap)
+- `playbooks/remove-k3s.yml`: Remove k3s and clean residual data
+- `playbooks/migrate-to-incluster-gitlab.yml`: Orchestrates migration to in-cluster GitLab
+- `playbooks/start-cluster.yml`: Start the k3s services on all nodes
+- `playbooks/stop-cluster.yml`: Stop the k3s services on all nodes
+- `playbooks/restart-cluster.yml`: Restart the k3s services
+- `playbooks/display-cluster-summary.yml`: Show cluster summary at the end
+
+### Included Playbooks (used by entrypoints; not usually run directly)
+- `includes/prepare-nodes.yml`: System preparation (packages, swap disable, iscsid)
+- `includes/install-k3s.yml`: K3s installation using xanmanning.k3s role
+- `includes/setup-kubeconfig.yml`: Fetch and merge kubeconfig to local machine
+- `includes/setup-flux.yml`: Install and configure Flux GitOps
+- `includes/setup-headlamp-auth.yml`: Configure Headlamp dashboard authentication
+- `includes/setup-gitlab-secrets.yml`: Pre-create GitLab passwords and secrets
+- `includes/setup-gitlab-project.yml`: Create GitLab group/project and push repository
+- `includes/setup-flux-auth.yml`: Create deploy token and reconfigure Flux
+- `includes/setup-gitlab-runner.yml`: Configure GitLab Runner authentication
 
 ### Maintenance Playbooks
 - `remove-k3s.yml`: Playbook to remove k3s and clean residual data
 - `reset.yml`: Playbook that removes and re-bootstraps the cluster (combines remove-k3s.yml and bootstrap.yml)
-- `migrate-to-incluster-gitlab.yml`: Automate migration from external Git repo to in-cluster GitLab
+- `migrate-to-incluster-gitlab.yml`: Orchestrates migration from external Git repo to in-cluster GitLab
+  - `setup-gitlab-project.yml`: Creates GitLab group/project and pushes repository
+  - `setup-flux-auth.yml`: Sets up Flux authentication and reconfigures GitRepository
+  - `setup-gitlab-runner.yml`: Configures GitLab Runner authentication
 
 ### Cluster Management Playbooks
 - `start-cluster.yml`: Start the k3s cluster services on all nodes
@@ -47,7 +63,7 @@ ansible-galaxy install -r requirements.yml
 
 3) Bootstrap the k3s cluster:
 ```bash
-ansible-playbook -i inventory.ini bootstrap.yml
+ansible-playbook -i inventory.ini playbooks/bootstrap.yml
 ```
 
 This will:
@@ -59,20 +75,20 @@ This will:
 
 ### Run individual bootstrap steps
 
-For more granular control, you can run individual playbooks:
+For more granular control, you can run individual steps (includes):
 
 ```bash
 # Prepare nodes only
-ansible-playbook -i inventory.ini prepare-nodes.yml
+ansible-playbook -i inventory.ini includes/prepare-nodes.yml
 
 # Install k3s only
-ansible-playbook -i inventory.ini install-k3s.yml
+ansible-playbook -i inventory.ini includes/install-k3s.yml
 
 # Setup kubeconfig only
-ansible-playbook -i inventory.ini setup-kubeconfig.yml
+ansible-playbook -i inventory.ini includes/setup-kubeconfig.yml
 
 # Setup Flux only
-ansible-playbook -i inventory.ini setup-flux.yml
+ansible-playbook -i inventory.ini includes/setup-flux.yml
 ```
 
 ### Remove / uninstall the k3s cluster
@@ -80,13 +96,13 @@ ansible-playbook -i inventory.ini setup-flux.yml
 Run the removal playbook against the same inventory:
 
 ```bash
-ansible-playbook -i inventory.ini remove-k3s.yml
+ansible-playbook -i inventory.ini playbooks/remove-k3s.yml
 ```
 
 Optional: trigger a reboot after removal by setting a variable:
 
 ```bash
-ansible-playbook -i inventory.ini remove-k3s.yml -e reboot_after_k3s_removal=true
+ansible-playbook -i inventory.ini playbooks/remove-k3s.yml -e reboot_after_k3s_removal=true
 ```
 
 ### Reset the k3s cluster (remove and re-bootstrap)
@@ -94,13 +110,13 @@ ansible-playbook -i inventory.ini remove-k3s.yml -e reboot_after_k3s_removal=tru
 Run the reset playbook to completely remove k3s and then re-bootstrap it:
 
 ```bash
-ansible-playbook -i inventory.ini reset.yml
+ansible-playbook -i inventory.ini playbooks/reset.yml
 ```
 
 Optional: trigger a reboot after removal (before re-bootstrapping):
 
 ```bash
-ansible-playbook -i inventory.ini reset.yml -e reboot_after_k3s_removal=true
+ansible-playbook -i inventory.ini playbooks/reset.yml -e reboot_after_k3s_removal=true
 ```
 
 **Note**: The reset playbook automatically updates your local kubeconfig as part of the bootstrap process. When the cluster is recreated, new TLS certificates are generated, so the kubeconfig must be refreshed. This is handled automatically by the `bootstrap.yml` playbook which includes `setup-kubeconfig.yml`.
@@ -108,7 +124,7 @@ ansible-playbook -i inventory.ini reset.yml -e reboot_after_k3s_removal=true
 If you encounter certificate errors when running `kubectl` commands after a reset (e.g., "certificate signed by unknown authority"), you can manually update your kubeconfig:
 
 ```bash
-ansible-playbook -i inventory.ini setup-kubeconfig.yml
+ansible-playbook -i inventory.ini includes/setup-kubeconfig.yml
 ```
 
 ### Migrate to In-Cluster GitLab
@@ -118,17 +134,23 @@ ansible-playbook -i inventory.ini setup-kubeconfig.yml
 If you need to run the migration manually (e.g., to re-run it or if you skipped it during bootstrap):
 
 ```bash
-ansible-playbook -i inventory.ini migrate-to-incluster-gitlab.yml
+ansible-playbook -i inventory.ini playbooks/migrate-to-incluster-gitlab.yml
 ```
 
-The migration playbook automatically:
+The migration playbook automatically (executes three sub-playbooks in order):
+1. **setup-gitlab-project.yml**: Creates GitLab group/project if needed and pushes repository
+2. **setup-flux-auth.yml**: Creates Flux deploy token, secrets, and reconfigures Flux
+3. **setup-gitlab-runner.yml**: Creates and configures GitLab Runner authentication
+
+Specific steps:
 - Waits for GitLab to be fully deployed and ready
 - Retrieves the GitLab root password from Kubernetes secrets
 - Creates an access token via GitLab Rails console (no manual token creation needed!)
-- Creates a GitLab group and project (default: `infrastructure/cluster-config`)
-- Pushes the repository to in-cluster GitLab
-- Updates `group_vars/all.yml` to use the in-cluster repository
-- Reconfigures Flux to sync from in-cluster GitLab
+- Creates a GitLab group and project (default: `infrastructure/cluster-config`) if they don't exist
+- Pushes the repository to in-cluster GitLab if project was just created
+- Creates deploy token for Flux authentication
+- Reconfigures Flux GitRepository to sync from in-cluster GitLab
+- Creates GitLab Runner authentication token and secrets
 - Verifies the migration was successful
 
 After migration, Flux will automatically sync from the in-cluster GitLab. You can push changes directly to the in-cluster repository:
@@ -209,17 +231,17 @@ Use these playbooks to manage your running cluster:
 
 **Start the cluster** (after a shutdown or node reboot):
 ```bash
-ansible-playbook -i inventory.ini start-cluster.yml
+ansible-playbook -i inventory.ini playbooks/start-cluster.yml
 ```
 
 **Stop the cluster** (graceful shutdown):
 ```bash
-ansible-playbook -i inventory.ini stop-cluster.yml
+ansible-playbook -i inventory.ini playbooks/stop-cluster.yml
 ```
 
 **Restart the cluster** (after configuration changes or to resolve issues):
 ```bash
-ansible-playbook -i inventory.ini restart-cluster.yml
+ansible-playbook -i inventory.ini playbooks/restart-cluster.yml
 ```
 
 These playbooks handle master and worker nodes in the correct order to ensure cluster stability. The restart playbook also displays cluster status and pod health after completion.

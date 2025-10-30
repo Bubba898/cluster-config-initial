@@ -3,25 +3,25 @@
 # This playbook imports individual playbooks in the correct order
 
 - name: Prepare nodes
-  ansible.builtin.import_playbook: prepare-nodes.yml
+  ansible.builtin.import_playbook: ../includes/prepare-nodes.yml
 
 - name: Install k3s
-  ansible.builtin.import_playbook: install-k3s.yml
+  ansible.builtin.import_playbook: ../includes/install-k3s.yml
 
 - name: Setup kubeconfig
-  ansible.builtin.import_playbook: setup-kubeconfig.yml
+  ansible.builtin.import_playbook: ../includes/setup-kubeconfig.yml
 
 - name: Setup Flux
-  ansible.builtin.import_playbook: setup-flux.yml
+  ansible.builtin.import_playbook: ../includes/setup-flux.yml
 
 - name: Setup GitLab secrets
-  ansible.builtin.import_playbook: setup-gitlab-secrets.yml
+  ansible.builtin.import_playbook: ../includes/setup-gitlab-secrets.yml
 
 - name: Migrate to in-cluster GitLab
   ansible.builtin.import_playbook: migrate-to-incluster-gitlab.yml
 
 - name: Setup Headlamp authentication
-  ansible.builtin.import_playbook: setup-headlamp-auth.yml
+  ansible.builtin.import_playbook: ../includes/setup-headlamp-auth.yml
 
 - name: Display cluster summary
   ansible.builtin.import_playbook: display-cluster-summary.yml
