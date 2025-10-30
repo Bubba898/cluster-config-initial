@@ -60,6 +60,9 @@ spec:
       ingress:
         enabled: false
         configureCertmanager: false
+      # Disable cert-manager installation since it's already installed separately
+      certmanager:
+        install: false
       kas:
         enabled: false
       appConfig:

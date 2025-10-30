@@ -16,19 +16,6 @@
     gitlab_token_name: "ansible-automation"
 
   tasks:
-    - name: Get GitLab root password from Kubernetes secret
-      ansible.builtin.shell: |
-        set -euo pipefail
-        kubectl get secret gitlab-gitlab-initial-root-password -n gitlab -o jsonpath='{.data.password}' | base64 -d
-      args:
-        executable: /bin/bash
-      register: gitlab_root_password_result
-      changed_when: false
-
-    - name: Set GitLab root password fact
-      ansible.builtin.set_fact:
-        gitlab_root_password: "{{ gitlab_root_password_result.stdout }}"
-
     - name: Wait for GitLab to be ready
       ansible.builtin.shell: |
         set -euo pipefail
@@ -56,8 +43,21 @@
         executable: /bin/bash
       register: gitlab_ready
       retries: 3
-      delay: 30
+      delay: 300
       until: gitlab_ready.rc == 0
+
+    - name: Get GitLab root password from Kubernetes secret
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl get secret gitlab-gitlab-initial-root-password -n gitlab -o jsonpath='{.data.password}' | base64 -d
+      args:
+        executable: /bin/bash
+      register: gitlab_root_password_result
+      changed_when: false
+
+    - name: Set GitLab root password fact
+      ansible.builtin.set_fact:
+        gitlab_root_password: "{{ gitlab_root_password_result.stdout }}"
 
     - name: Create or retrieve Personal Access Token for automation
       ansible.builtin.script:
