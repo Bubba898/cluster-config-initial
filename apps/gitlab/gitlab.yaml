@@ -64,6 +64,9 @@ spec:
         enabled: false
       appConfig:
         enableUsagePing: false
+      registry:
+        api:
+          url: http://registry.gitlab.svc.cluster.local:5000
       psql:
         image:
           tag: 15
@@ -118,6 +121,7 @@ spec:
   values:
     replicas: 1
     gitlabUrl: "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
+    # TODO needs to be automatically done via ansible
     runnerToken: "glrtr-m-kR_yjLTEwbzNsGHtQT"
     unregisterRunners: false
     rbac:
@@ -128,6 +132,7 @@ spec:
       config: |
         [[runners]]
           clone_url = "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
+          environment = ["CI_REGISTRY=registry.gitlab.svc.cluster.local:5000"]
           [runners.kubernetes]
             namespace = "{{.Release.Namespace}}"
             image = "ubuntu:22.04"
