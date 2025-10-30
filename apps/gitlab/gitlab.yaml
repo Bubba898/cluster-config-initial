@@ -137,15 +137,29 @@ spec:
             "CI_REGISTRY=gitlab-registry.gitlab.svc.cluster.local:5000",
             "CI_SERVER_HOST=gitlab-webservice-default.gitlab.svc.cluster.local",
             "CI_SERVER_PORT=8181",
-            "CI_SERVER_PROTOCOL=http"
+            "CI_SERVER_PROTOCOL=http",
+            "DOCKER_TLS_CERTDIR="
           ]
           pre_build_script = """
             # Override any registry variables that might use external hostnames
             export CI_REGISTRY="gitlab-registry.gitlab.svc.cluster.local:5000"
             export CI_REGISTRY_IMAGE="$$CI_REGISTRY/$$CI_PROJECT_PATH"
             
+            # Configure Docker to allow insecure registries (HTTP without TLS)
+            mkdir -p /etc/docker
+            cat > /etc/docker/daemon.json <<EOF
+{
+  "insecure-registries": [
+    "gitlab-registry.gitlab.svc.cluster.local:5000",
+    "registry.gitlab.svc.cluster.local:5000",
+    "registry.${INGRESS_IP}.sslip.io"
+  ]
+}
+EOF
+            
             echo "Using internal registry: $$CI_REGISTRY"
             echo "Registry image: $$CI_REGISTRY_IMAGE"
+            echo "Configured insecure registries for HTTP access"
           """
           [runners.kubernetes]
             namespace = "{{.Release.Namespace}}"
