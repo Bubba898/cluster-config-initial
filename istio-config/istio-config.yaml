@@ -1,0 +1,143 @@
+# Wildcard certificate for all services using sslip.io
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-sslip-cert
+  namespace: istio-system
+spec:
+  secretName: wildcard-sslip-tls
+  duration: 2160h # 90 days
+  renewBefore: 720h # 30 days
+  issuerRef:
+    name: homelab-ca-issuer
+    kind: ClusterIssuer
+  commonName: "*.sslip.io"
+  dnsNames:
+    - "*.${INGRESS_IP}.sslip.io"
+    - "${INGRESS_IP}.sslip.io"
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: default-gateway
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    # HTTP server with automatic redirect to HTTPS
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "*.${INGRESS_IP}.sslip.io"
+      tls:
+        httpsRedirect: true
+    # HTTPS server with TLS
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      hosts:
+        - gitlab.${INGRESS_IP}.sslip.io
+        - registry.${INGRESS_IP}.sslip.io
+        - headlamp.${INGRESS_IP}.sslip.io
+        - kiali.${INGRESS_IP}.sslip.io
+        - grafana.${INGRESS_IP}.sslip.io
+        - prometheus.${INGRESS_IP}.sslip.io
+        - jaeger.${INGRESS_IP}.sslip.io
+        - longhorn.${INGRESS_IP}.sslip.io
+      tls:
+        mode: SIMPLE
+        credentialName: wildcard-sslip-tls
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: kiali
+  namespace: istio-system
+spec:
+  hosts:
+    - kiali.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: kiali.istio-system.svc.cluster.local
+            port:
+              number: 20001
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: grafana
+  namespace: istio-system
+spec:
+  hosts:
+    - grafana.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: kube-prometheus-stack-grafana.observability.svc.cluster.local
+            port:
+              number: 80
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: prometheus
+  namespace: istio-system
+spec:
+  hosts:
+    - prometheus.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: kube-prometheus-stack-prometheus.observability.svc.cluster.local
+            port:
+              number: 9090
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: jaeger
+  namespace: istio-system
+spec:
+  hosts:
+    - jaeger.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: jaeger-query.observability.svc.cluster.local
+            port:
+              number: 16686
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: longhorn
+  namespace: istio-system
+spec:
+  hosts:
+    - longhorn.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: longhorn-frontend.longhorn-system.svc.cluster.local
+            port:
+              number: 80
+
