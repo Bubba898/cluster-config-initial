@@ -79,8 +79,6 @@ spec:
           tag: 15
       storage:
         class: longhorn
-    certmanager:
-      enabled: false
     nginx-ingress:
       enabled: false
     certmanager-issuer:
@@ -135,6 +133,8 @@ spec:
     # TODO needs to be automatically done via ansible
     runnerToken: "glrtr-m-kR_yjLTEwbzNsGHtQT"
     unregisterRunners: false
+    certmanager:
+      installCRDs: false
     rbac:
       create: true
     runners:
