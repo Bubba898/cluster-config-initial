@@ -13,7 +13,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: headlamp-admin-binding
+  name: headlamp-admin
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
