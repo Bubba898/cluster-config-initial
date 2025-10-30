@@ -3,8 +3,26 @@ kind: Namespace
 metadata:
   name: headlamp
 ---
-# ServiceAccount and RBAC are managed by the Helm chart below
-
+# ServiceAccount with cluster-admin access
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: headlamp-admin
+  namespace: headlamp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: headlamp-admin-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: headlamp-admin
+    namespace: headlamp
+---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -31,12 +49,10 @@ spec:
         namespace: flux-system
   values:
     serviceAccount:
-      create: true
+      create: false
       name: headlamp-admin
     rbac:
-      create: true
-      clusterRoleBinding:
-        create: true
+      create: false
     ingress:
       enabled: false
     service:
@@ -71,20 +87,6 @@ spec:
       - name: headlamp-plugins
         persistentVolumeClaim:
           claimName: headlamp
----
-# Grant full cluster access to Headlamp
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: headlamp-cluster-admin
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-  - kind: ServiceAccount
-    name: headlamp-admin
-    namespace: headlamp
 ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
