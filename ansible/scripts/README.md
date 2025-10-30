@@ -4,8 +4,28 @@ This directory contains helper shell scripts for managing GitLab, GitLab Runner,
 
 ## GitLab Credential Management
 
-### `get-gitlab-credentials.sh`
+### `get-gitlab-root-password.sh` ✅ Recommended
 Retrieves the GitLab root password from the Kubernetes cluster.
+
+**Usage:**
+```bash
+./get-gitlab-root-password.sh
+```
+
+**What it does:**
+- Fetches the root password from `gitlab-initial-root-password` secret in the `gitlab` namespace
+- Displays the GitLab URL, Registry URL, and root login credentials
+- Password is automatically generated during Ansible bootstrap
+
+**When to use:**
+- First time accessing GitLab UI
+- Need to retrieve the root password
+- Sharing admin access credentials
+
+---
+
+### `get-gitlab-credentials.sh` (Legacy)
+Legacy script for retrieving GitLab credentials (supports older secret naming).
 
 **Usage:**
 ```bash
@@ -16,6 +36,8 @@ Retrieves the GitLab root password from the Kubernetes cluster.
 - Fetches the root password from `gitlab-gitlab-initial-root-password` secret
 - Displays the GitLab URL and login credentials
 - Useful for manual GitLab UI access
+
+**Note:** If using the new Helm chart setup, prefer `get-gitlab-root-password.sh` instead.
 
 ---
 
@@ -140,11 +162,12 @@ Use `create-runner-token.sh` instead, which creates runners with authentication 
 
 | Script | Workflow | Status | Output Format |
 |--------|----------|--------|---------------|
+| `get-gitlab-root-password.sh` | Credential Retrieval | ✅ Recommended | Password |
+| `get-gitlab-credentials.sh` | Credential Retrieval | ⚠️ Legacy | Password |
+| `create-gitlab-token.sh` | PAT Creation | ✅ Active | `glpat-*` |
 | `create-runner-token.sh` | Authentication Token | ✅ Recommended | `glrt-*` |
 | `get-runner-token.sh` | Registration Token | ⚠️ Deprecated | `glrtr-*` |
 | `update-runner-token.sh` | Authentication Token | ✅ Recommended | Updates cluster |
-| `create-gitlab-token.sh` | PAT Creation | ✅ Active | `glpat-*` |
-| `get-gitlab-credentials.sh` | Credential Retrieval | ✅ Active | Password |
 | `get-headlamp-token.sh` | Token Retrieval | ✅ Active | JWT Token |
 
 ---
@@ -153,13 +176,20 @@ Use `create-runner-token.sh` instead, which creates runners with authentication 
 
 These scripts are called automatically by Ansible playbooks:
 
+- **`bootstrap.yml` / `setup-gitlab-secrets.yml`:**
+  - Automatically generates secure random passwords for GitLab root, PostgreSQL, and Redis
+  - Creates Kubernetes secrets before GitLab deployment
+  - Saves credentials to `.gitlab-credentials.txt` for easy access
+  - Use `get-gitlab-root-password.sh` to retrieve the password later
+
 - **`migrate-to-incluster-gitlab.yml`:**
   - Calls `create-gitlab-token.sh` to create API access token
   - Calls `create-runner-token.sh` to create runner and get authentication token
   - Patches GitLab Runner HelmRelease with the token
 
-- **Manual Updates:**
-  - Run `update-runner-token.sh` from the `ansible/` directory when you need to regenerate tokens
+- **Manual Secret Updates:**
+  - Run `ansible-playbook setup-gitlab-secrets.yml` to regenerate secrets (skips existing ones)
+  - Run `update-runner-token.sh` from the `ansible/` directory when you need to regenerate runner tokens
 
 ---
 

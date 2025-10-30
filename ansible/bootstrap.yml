@@ -14,6 +14,9 @@
 - name: Setup Flux
   ansible.builtin.import_playbook: setup-flux.yml
 
+- name: Setup GitLab secrets
+  ansible.builtin.import_playbook: setup-gitlab-secrets.yml
+
 - name: Migrate to in-cluster GitLab
   ansible.builtin.import_playbook: migrate-to-incluster-gitlab.yml
 

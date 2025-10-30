@@ -1,0 +1,264 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitlab
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: gitlab
+  namespace: flux-system
+spec:
+  interval: 1h0m0s
+  url: https://charts.gitlab.io/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  interval: 10m0s
+  timeout: 30m0s
+  chart:
+    spec:
+      chart: gitlab
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: gitlab
+        namespace: flux-system
+  values:
+    global:
+      # Configure hosts
+      hosts:
+        domain: ${INGRESS_IP}.sslip.io
+        https: true
+        gitlab:
+          name: gitlab.${INGRESS_IP}.sslip.io
+        registry:
+          name: registry.${INGRESS_IP}.sslip.io
+      
+      # Ingress configuration - disable as we're using Istio
+      ingress:
+        enabled: false
+        configureCertmanager: false
+      
+      # Configure GitLab initial root password
+      initialRootPassword:
+        secret: gitlab-initial-root-password
+        key: password
+      
+      # Use cert-manager for internal certificates
+      certificates:
+        enabled: true
+        issuer:
+          name: homelab-ca-issuer
+          kind: ClusterIssuer
+      
+      # Edition - use CE (Community Edition)
+      edition: ce
+      
+      # Time zone
+      time_zone: UTC
+      
+      # Configure object storage (MinIO will be deployed in-cluster)
+      minio:
+        enabled: true
+      
+      # PostgreSQL configuration
+      psql:
+        password:
+          secret: gitlab-postgresql-password
+          key: password
+      
+      # Redis configuration
+      redis:
+        password:
+          enabled: true
+          secret: gitlab-redis-password
+          key: password
+      
+      # GitLab Shell
+      shell:
+        port: 32022
+      
+    # Disable some components for a smaller footprint
+    gitlab:
+      # GitLab Runner - can be enabled later if needed
+      gitlab-runner:
+        install: false
+      
+      # Webservice configuration
+      webservice:
+        minReplicas: 1
+        maxReplicas: 1
+        resources:
+          requests:
+            cpu: 200m
+            memory: 1.5Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+      
+      # Sidekiq configuration
+      sidekiq:
+        minReplicas: 1
+        maxReplicas: 1
+        resources:
+          requests:
+            cpu: 100m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 1.5Gi
+      
+      # GitLab Shell
+      gitlab-shell:
+        minReplicas: 1
+        maxReplicas: 1
+        resources:
+          requests:
+            cpu: 50m
+            memory: 100Mi
+          limits:
+            cpu: 200m
+            memory: 200Mi
+      
+      # Gitaly (Git repository storage)
+      gitaly:
+        persistence:
+          enabled: true
+          size: 50Gi
+          storageClass: longhorn
+        resources:
+          requests:
+            cpu: 100m
+            memory: 500Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+      
+      # GitLab Exporter
+      gitlab-exporter:
+        enabled: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 100Mi
+          limits:
+            cpu: 100m
+            memory: 200Mi
+    
+    # Registry configuration
+    registry:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 200Mi
+        limits:
+          cpu: 200m
+          memory: 512Mi
+    
+    # PostgreSQL configuration
+    postgresql:
+      install: true
+      persistence:
+        enabled: true
+        size: 8Gi
+        storageClass: longhorn
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+    
+    # Redis configuration
+    redis:
+      install: true
+      master:
+        persistence:
+          enabled: true
+          size: 5Gi
+          storageClass: longhorn
+        resources:
+          requests:
+            cpu: 50m
+            memory: 256Mi
+          limits:
+            cpu: 200m
+            memory: 512Mi
+    
+    # MinIO configuration
+    minio:
+      persistence:
+        enabled: true
+        size: 10Gi
+        storageClass: longhorn
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+        limits:
+          cpu: 200m
+          memory: 512Mi
+    
+    # Prometheus metrics
+    prometheus:
+      install: false  # Use existing prometheus stack
+    
+    # Certmanager - use existing cert-manager
+    certmanager:
+      install: false
+    
+    # Nginx ingress - disabled, using Istio
+    nginx-ingress:
+      enabled: false
+---
+# Note: GitLab secrets are automatically generated by Ansible during bootstrap.
+# If you need to manually create them, run:
+#   ansible-playbook ansible/setup-gitlab-secrets.yml
+# To retrieve the root password:
+#   cd ansible/scripts && ./get-gitlab-root-password.sh
+---
+# VirtualService for GitLab web interface
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  hosts:
+    - gitlab.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: gitlab-webservice-default.gitlab.svc.cluster.local
+            port:
+              number: 8181
+---
+# VirtualService for GitLab Container Registry
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gitlab-registry
+  namespace: gitlab
+spec:
+  hosts:
+    - registry.${INGRESS_IP}.sslip.io
+  gateways:
+    - istio-system/default-gateway
+  http:
+    - route:
+        - destination:
+            host: gitlab-registry.gitlab.svc.cluster.local
+            port:
+              number: 5000
+

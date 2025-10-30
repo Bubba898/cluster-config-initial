@@ -7,6 +7,30 @@
   vars:
     ingress_ip: "{{ hostvars[groups['master'][0]].ingress_ip }}"
   tasks:
+    - name: Retrieve GitLab root password
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl get secret gitlab-initial-root-password -n gitlab -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "Not yet available"
+      args:
+        executable: /bin/bash
+      register: gitlab_root_password
+      ignore_errors: true
+      changed_when: false
+
+    - name: Retrieve Headlamp token info
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if kubectl get secret headlamp-user-token -n kube-system &>/dev/null; then
+          echo "Available (use get-headlamp-token.sh)"
+        else
+          echo "Not yet available"
+        fi
+      args:
+        executable: /bin/bash
+      register: headlamp_token_status
+      ignore_errors: true
+      changed_when: false
+
     - name: Display cluster setup completion message
       ansible.builtin.debug:
         msg: |
@@ -27,15 +51,16 @@
              URL:      https://headlamp.{{ ingress_ip }}.sslip.io
              Purpose:  Modern, user-friendly Kubernetes dashboard with Flux plugin
              Docs:     https://headlamp.dev/docs/
-             Auth:     Use the token created during setup (see ansible/scripts/get-headlamp-token.sh)
+             Auth:     Token: {{ headlamp_token_status.stdout }}
+                       Run: cd ansible/scripts && ./get-headlamp-token.sh
 
           🦊  GITLAB - Git Repository & CI/CD Platform
              URL:      https://gitlab.{{ ingress_ip }}.sslip.io
              Purpose:  Self-hosted Git repository manager with built-in CI/CD pipelines
              Docs:     https://docs.gitlab.com/
-             Auth:     Username: root, Password: retrieve with:
-                       kubectl get secret gitlab-gitlab-initial-root-password -n gitlab \
-                         -o jsonpath='{.data.password}' | base64 -d
+             Username: root
+             Password: {{ gitlab_root_password.stdout }}
+             Retrieve: cd ansible/scripts && ./get-gitlab-root-password.sh
 
           📦  GITLAB REGISTRY - Container Image Registry
              URL:      https://registry.{{ ingress_ip }}.sslip.io
@@ -66,6 +91,29 @@
              Purpose:  End-to-end distributed request tracing across microservices
              Docs:     https://www.jaegertracing.io/docs/
              Auth:     No authentication required
+
+          💾  LONGHORN - Distributed Storage
+             URL:      https://longhorn.{{ ingress_ip }}.sslip.io
+             Purpose:  Persistent storage for Kubernetes workloads
+             Docs:     https://longhorn.io/docs/
+             Auth:     No authentication required
+
+          ┌────────────────────────────────────────────────────────────────────────────────┐
+          │ 🔐  IMPORTANT CREDENTIALS                                                      │
+          └────────────────────────────────────────────────────────────────────────────────┘
+
+          GitLab Root Account:
+            • Username: root
+            • Password: {{ gitlab_root_password.stdout }}
+            • Saved to: .gitlab-credentials.txt
+          
+          Headlamp Dashboard:
+            • Status: {{ headlamp_token_status.stdout }}
+            • Saved to: .headlamp-token.txt
+
+          📝  To retrieve credentials later:
+              • GitLab:   cd ansible/scripts && ./get-gitlab-root-password.sh
+              • Headlamp: cd ansible/scripts && ./get-headlamp-token.sh
 
           ╔════════════════════════════════════════════════════════════════════════════════╗
           ║                         Happy Clustering! 🚢☸️                                  ║
