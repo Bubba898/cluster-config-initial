@@ -79,6 +79,8 @@ spec:
           tag: 15
       storage:
         class: longhorn
+    certmanager:
+      enabled: false
     nginx-ingress:
       enabled: false
     certmanager-issuer:
