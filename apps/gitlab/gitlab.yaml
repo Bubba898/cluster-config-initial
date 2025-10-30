@@ -36,6 +36,11 @@ spec:
     remediation:
       retries: 3
   values:
+    certmanager:
+    enabled: false
+    crds:
+      enabled: false
+    installCRDs: false
     global:
       # Edition: CE (Community Edition) or EE (Enterprise Edition)
       edition: ce
