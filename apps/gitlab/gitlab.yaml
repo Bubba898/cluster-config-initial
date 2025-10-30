@@ -213,8 +213,7 @@ spec:
       install: false  # Use existing prometheus stack
     
     # Certmanager - use existing cert-manager
-    certmanager:
-      install: false
+    installCertmanager: false
     
     # Nginx ingress - disabled, using Istio
     nginx-ingress:
