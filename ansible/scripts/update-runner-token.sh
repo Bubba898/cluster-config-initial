@@ -37,7 +37,7 @@ fi
 echo "   Ingress IP: $INGRESS_IP"
 
 # Set GitLab URLs
-GITLAB_URL="http://gitlab.${INGRESS_IP}.sslip.io"
+GITLAB_URL="https://gitlab.${INGRESS_IP}.sslip.io"
 GITLAB_INTERNAL_URL="http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
 
 echo "   GitLab URL: $GITLAB_URL"

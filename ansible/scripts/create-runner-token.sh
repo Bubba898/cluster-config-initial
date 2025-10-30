@@ -10,7 +10,7 @@ RUNNER_DESCRIPTION="${3:-k3s-cluster-runner}"
 
 if [ -z "$GITLAB_URL" ] || [ -z "$GITLAB_TOKEN" ]; then
     echo "Usage: $0 <gitlab_url> <gitlab_access_token> [runner_description]"
-    echo "Example: $0 http://gitlab.example.com glpat-xxxxx my-runner"
+    echo "Example: $0 https://gitlab.example.com glpat-xxxxx my-runner"
     exit 1
 fi
 

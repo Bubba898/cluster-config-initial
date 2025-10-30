@@ -7,7 +7,7 @@
 
   vars:
     gitlab_host: "gitlab.{{ ingress_ip }}.sslip.io"
-    gitlab_url: "http://{{ gitlab_host }}"
+    gitlab_url: "https://{{ gitlab_host }}"
     gitlab_internal_host: "gitlab-webservice-default.gitlab.svc.cluster.local:8181"
     gitlab_internal_url: "http://{{ gitlab_internal_host }}"
     gitlab_project_namespace: "infrastructure"
@@ -16,12 +16,6 @@
     gitlab_token_name: "ansible-automation"
 
   tasks:
-    - name: Check required variables
-      ansible.builtin.assert:
-        that:
-          - ingress_ip is defined
-        fail_msg: "Required variable missing. Set ingress_ip in group_vars/all.yml"
-
     - name: Get GitLab root password from Kubernetes secret
       ansible.builtin.shell: |
         set -euo pipefail
@@ -129,7 +123,7 @@
     - name: Set GitLab repository URLs
       ansible.builtin.set_fact:
         # URL with token for git push from local machine
-        gitlab_repo_url_external: "http://oauth2:{{ gitlab_access_token }}@{{ gitlab_host }}/{{ gitlab_project_path }}.git"
+        gitlab_repo_url_external: "https://oauth2:{{ gitlab_access_token }}@{{ gitlab_host }}/{{ gitlab_project_path }}.git"
         # Clean URL without token for Flux (will use Secret)
         gitlab_repo_url_internal_clean: "http://{{ gitlab_internal_host }}/{{ gitlab_project_path }}.git"
 

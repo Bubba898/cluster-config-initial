@@ -128,5 +128,5 @@ spec:
       tracing:
         enabled: true
         in_cluster_url: http://jaeger.observability.svc.cluster.local:16686
-        url: jaeger.${INGRESS_IP}.sslip.io
+        url: https://jaeger.${INGRESS_IP}.sslip.io
         use_grpc: false

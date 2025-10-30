@@ -46,7 +46,7 @@ if [ -z "$RUNNER_TOKEN" ]; then
     echo "❌ Could not retrieve runner registration token"
     echo ""
     echo "You can manually get it from:"
-    echo "1. Login to GitLab UI at: http://gitlab.192.168.178.240.sslip.io"
+    echo "1. Login to GitLab UI at: https://gitlab.192.168.178.240.sslip.io"
     echo "2. Go to: Admin Area > CI/CD > Runners"
     echo "3. Copy the registration token"
     exit 1

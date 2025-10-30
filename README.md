@@ -105,14 +105,41 @@ kubectl get svc -n istio-system istio-ingressgateway
 
 ## Access Without a Domain (sslip.io)
 
-The manifests use [sslip.io](https://sslip.io) for automatic DNS resolution without requiring a real domain:
+The manifests use [sslip.io](https://sslip.io) for automatic DNS resolution without requiring a real domain.
 
-- GitLab: `http://gitlab.${INGRESS_IP}.sslip.io`
-- Container Registry: `http://registry.${INGRESS_IP}.sslip.io`
-- Headlamp (K8s dashboard): `http://headlamp.${INGRESS_IP}.sslip.io`
+### Available Services
+
+All services are accessible via HTTPS with automatic TLS certificates:
+
+**Core Services:**
+- GitLab: `https://gitlab.${INGRESS_IP}.sslip.io`
+- Container Registry: `https://registry.${INGRESS_IP}.sslip.io`
+- Headlamp (K8s dashboard): `https://headlamp.${INGRESS_IP}.sslip.io`
+
+**Observability:**
+- Grafana: `https://grafana.${INGRESS_IP}.sslip.io` (default credentials: admin/admin)
+- Prometheus: `https://prometheus.${INGRESS_IP}.sslip.io`
+- Kiali (Service Mesh): `https://kiali.${INGRESS_IP}.sslip.io`
+- Jaeger (Tracing): `https://jaeger.${INGRESS_IP}.sslip.io`
 
 For example, with `ingress_ip: 192.168.178.240`:
-- GitLab: `http://gitlab.192.168.178.240.sslip.io`
+- GitLab: `https://gitlab.192.168.178.240.sslip.io`
+- Grafana: `https://grafana.192.168.178.240.sslip.io`
+
+### TLS/HTTPS Configuration
+
+All external-facing services use HTTPS with automatic TLS certificates:
+
+- **cert-manager** is deployed as part of the infrastructure layer
+- A self-signed CA is automatically created for the homelab
+- A wildcard certificate (`*.${INGRESS_IP}.sslip.io`) is generated and used by all services
+- HTTP requests are automatically redirected to HTTPS
+- The certificate is valid for 90 days and auto-renews 30 days before expiration
+
+**Note:** Since this uses a self-signed CA, your browser will show a certificate warning on first visit. You can:
+1. Accept the warning (safe for homelab use)
+2. Import the CA certificate to your browser/system trust store (see cert-manager documentation)
+3. Use a real CA like Let's Encrypt if you have a public domain
 
 When you have a real domain, update the relevant manifests in `apps/` and configure DNS records to point to your `ingress_ip`.
 
@@ -192,7 +219,7 @@ ansible-playbook -i inventory.ini reset.yml -e reboot_after_k3s_removal=true
 
 ## Notes
 
-- **TLS/HTTPS**: This repo uses HTTP by default for simplicity. To add TLS, install cert-manager and configure certificates in the Istio Gateway definitions.
+- **TLS/HTTPS**: This repo uses HTTPS for all external-facing services. Internal cluster service-to-service communication uses HTTP.
 - **GitLab Resources**: GitLab requires significant CPU/RAM/disk. Ensure your node(s) have adequate resources (recommend 8GB+ RAM, 4+ CPU cores).
 - **Storage**: Longhorn creates a default StorageClass. If you have existing storage solutions, you may want to adjust the default StorageClass settings.
 - **Scaling**: To add worker nodes, add them to the `[workers]` group in `inventory.ini` and re-run `ansible-playbook -i inventory.ini install-k3s.yml`.

@@ -28,7 +28,7 @@ if [ -z "$INGRESS_IP" ]; then
     INGRESS_IP="<INGRESS_IP>"
 fi
 
-GITLAB_URL="http://gitlab.${INGRESS_IP}.sslip.io"
+GITLAB_URL="https://gitlab.${INGRESS_IP}.sslip.io"
 
 # Get root password
 echo "1. GitLab Root Password"

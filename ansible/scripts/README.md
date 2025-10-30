@@ -29,7 +29,7 @@ Creates a Personal Access Token (PAT) via GitLab API or retrieves an existing on
 
 **Example:**
 ```bash
-./create-gitlab-token.sh "http://gitlab.192.168.1.100.sslip.io" "mypassword" "automation-token"
+./create-gitlab-token.sh "https://gitlab.192.168.1.100.sslip.io" "mypassword" "automation-token"
 ```
 
 **What it does:**
@@ -52,7 +52,7 @@ Creates a GitLab Runner using the **new authentication token workflow** (GitLab 
 
 **Example:**
 ```bash
-./create-runner-token.sh "http://gitlab.192.168.1.100.sslip.io" "glpat-xxxxx" "k3s-runner"
+./create-runner-token.sh "https://gitlab.192.168.1.100.sslip.io" "glpat-xxxxx" "k3s-runner"
 ```
 
 **Environment Variables:**
