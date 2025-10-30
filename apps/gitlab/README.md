@@ -5,11 +5,12 @@ This directory contains the Flux HelmRelease configuration for GitLab CE (Commun
 ## Overview
 
 GitLab is installed using the official GitLab Helm chart and configured for a homelab environment with:
-- GitLab web interface
+- GitLab web interface (Community Edition)
 - Container Registry
 - Built-in PostgreSQL and Redis
 - MinIO for object storage
-- Integration with existing cert-manager and Istio
+- TLS certificates managed by cert-manager using homelab CA
+- Ingress managed by Istio with automatic HTTPS redirect
 
 ## Configuration
 
@@ -34,8 +35,18 @@ The configuration is optimized for a homelab with minimal resource requests:
 ### Access URLs
 
 After deployment, GitLab will be available at:
-- **Web Interface**: `https://gitlab.${INGRESS_IP}.sslip.io`
-- **Container Registry**: `https://registry.${INGRESS_IP}.sslip.io`
+- **Web Interface**: `https://gitlab.192.168.178.240.sslip.io`
+- **Container Registry**: `https://registry.192.168.178.240.sslip.io`
+- **MinIO Console**: `https://minio.192.168.178.240.sslip.io` (for admin access)
+- **Git SSH**: Port 32022 (NodePort)
+
+### TLS Configuration
+
+GitLab uses cert-manager for TLS certificate management:
+- **Issuer**: homelab-ca-issuer (ClusterIssuer)
+- **Certificates**: Automatically provisioned for gitlab, registry, and minio subdomains
+- **Validity**: 90 days with automatic renewal 15 days before expiration
+- **Ingress**: Managed by Istio Gateway with automatic HTTP to HTTPS redirect
 
 ## Initial Setup
 

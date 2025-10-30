@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitlab
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gitlab-runner
+  namespace: gitlab
+spec:
+  interval: 10m0s
+  chart:
+    spec:
+      chart: gitlab-runner
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: gitlab
+        namespace: flux-system
+  values:
+    # Runner token is provided via Kubernetes Secret managed by Ansible
+
+    gitlabUrl: https://gitlab.${INGRESS_IP}.sslip.io
+
+    rbac:
+      create: true
+
+    runners:
+      # Reference to a Secret containing key 'runner-token' with a glrt-* token
+      secret: gitlab-runner-auth
+      tags: "kubernetes,k3s"
+      runUntagged: true
+      locked: false
+      privileged: true
+      cache:
+        cacheType: s3
+        s3ServerAddress: minio.gitlab.svc.cluster.local:9000
+        s3BucketName: gitlab-runner-cache
+        s3BucketLocation: us-east-1
+        s3AccessKey: ""
+        s3SecretKey: ""
+        secretName: ""  # can be set later if using S3 cache
+      config: |
+        [[runners]]
+          [runners.kubernetes]
+            image = "alpine:3.20"
+            privileged = true
+            poll_timeout = 180
+            helper_image = "registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper:x86_64-latest"
+          [runners.cache]
+            Type = "s3"
+            Shared = true
+            [runners.cache.s3]
+              ServerAddress = "minio.gitlab.svc.cluster.local:9000"
+              BucketName = "gitlab-runner-cache"
+              BucketLocation = "us-east-1"
+

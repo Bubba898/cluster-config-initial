@@ -24,7 +24,7 @@ echo ""
 
 # Check if runner with this description already exists
 echo "Checking for existing runner..."
-EXISTING_RUNNERS=$(curl -sf -X GET \
+EXISTING_RUNNERS=$(curl -k -sf -X GET \
     -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     "$GITLAB_URL/api/v4/runners?type=instance_type&status=online,offline,paused" \
     2>/dev/null || echo "[]")
@@ -42,7 +42,7 @@ if [ -n "$EXISTING_RUNNER_ID" ] && [ "$EXISTING_RUNNER_ID" != "null" ]; then
     # Check if AUTO_DELETE environment variable is set (for automation)
     if [ "${AUTO_DELETE:-false}" == "true" ]; then
         echo "AUTO_DELETE is set, deleting existing runner..."
-        curl -sf -X DELETE \
+        curl -k -sf -X DELETE \
             -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
             "$GITLAB_URL/api/v4/runners/$EXISTING_RUNNER_ID" >/dev/null
         echo "✓ Existing runner deleted"
@@ -58,7 +58,7 @@ if [ -n "$EXISTING_RUNNER_ID" ] && [ "$EXISTING_RUNNER_ID" != "null" ]; then
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo "Deleting existing runner..."
-            curl -sf -X DELETE \
+            curl -k -sf -X DELETE \
                 -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
                 "$GITLAB_URL/api/v4/runners/$EXISTING_RUNNER_ID" >/dev/null
             echo "✓ Existing runner deleted"
@@ -72,7 +72,7 @@ fi
 
 # Create a new instance runner
 echo "Creating new GitLab runner..."
-RESPONSE=$(curl -sf -X POST \
+RESPONSE=$(curl -k -sf -X POST \
     -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     -H "Content-Type: application/json" \
     -d "{

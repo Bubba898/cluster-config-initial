@@ -29,7 +29,7 @@
         max_attempts=60
         attempt=0
         while [ $attempt -lt $max_attempts ]; do
-          if curl -sf -o /dev/null "{{ gitlab_url }}/-/readiness"; then
+          if curl -k -sf -o /dev/null "{{ gitlab_url }}/-/readiness"; then
             echo "GitLab is ready!"
             exit 0
           fi
@@ -80,6 +80,7 @@
         headers:
           PRIVATE-TOKEN: "{{ gitlab_access_token }}"
         status_code: 200
+        validate_certs: false
       register: project_info
 
     - name: Create deploy token for Flux
@@ -94,6 +95,7 @@
           scopes: ["read_repository"]
           expires_at: "{{ '%Y-%m-%d' | strftime( ( ansible_date_time.epoch | int ) + ( 365 * 86400 ) ) }}"
         status_code: [201, 400]  # 400 if already exists
+        validate_certs: false
       register: deploy_token_result
       failed_when:
         - deploy_token_result.status not in [201, 400]
@@ -106,6 +108,7 @@
         headers:
           PRIVATE-TOKEN: "{{ gitlab_access_token }}"
         status_code: 200
+        validate_certs: false
       register: existing_tokens
       when: deploy_token_result.status == 400
 
@@ -148,6 +151,7 @@
           path: "{{ gitlab_project_namespace }}"
           visibility: "private"
         status_code: [201, 400]  # 400 if already exists
+        validate_certs: false
       register: gitlab_group
       failed_when: 
         - gitlab_group.status not in [201, 400]
@@ -160,6 +164,7 @@
         headers:
           PRIVATE-TOKEN: "{{ gitlab_access_token }}"
         status_code: 200
+        validate_certs: false
       register: group_info
 
     - name: Create GitLab project
@@ -175,6 +180,7 @@
           visibility: "private"
           initialize_with_readme: false
         status_code: [201, 400]  # 400 if already exists
+        validate_certs: false
       register: gitlab_project
       failed_when:
         - gitlab_project.status not in [201, 400]
@@ -382,18 +388,23 @@
       ansible.builtin.set_fact:
         gitlab_runner_token: "{{ runner_token_result.stdout | trim }}"
 
-    - name: Update GitLab Runner HelmRelease with authentication token
+    - name: Create or update GitLab Runner authentication token Secret
       ansible.builtin.shell: |
         set -euo pipefail
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: gitlab-runner-auth
+          namespace: gitlab
+        type: Opaque
+        stringData:
+          runner-token: "{{ gitlab_runner_token }}"
+        EOF
+        echo "✓ GitLab Runner token secret applied"
         
-        # Update the runnerToken in the HelmRelease
-        kubectl patch helmrelease gitlab-runner -n gitlab --type=merge -p '{"spec":{"values":{"runnerToken":"{{ gitlab_runner_token }}"}}}'
-        
-        echo "✓ GitLab Runner HelmRelease updated with authentication token"
-        
-        # Force reconciliation of the HelmRelease
+        # Force reconciliation of the HelmRelease to pick up the secret
         flux reconcile helmrelease gitlab-runner -n gitlab --timeout=5m || true
-        
         echo "✓ Triggered GitLab Runner reconciliation"
       args:
         executable: /bin/bash

@@ -7,7 +7,7 @@ GITLAB_TOKEN_NAME="$3"
 
 # First, get a session token by logging in
 echo "Authenticating as root user..." >&2
-SESSION_TOKEN=$(curl -sf "${GITLAB_URL}/oauth/token" \
+SESSION_TOKEN=$(curl -k -sf "${GITLAB_URL}/oauth/token" \
   -d "grant_type=password" \
   -d "username=root" \
   -d "password=${GITLAB_ROOT_PASSWORD}" \
@@ -18,7 +18,7 @@ if [ -z "$SESSION_TOKEN" ]; then
   
   # Alternative: Use personal access tokens API with basic auth
   # First check if a token already exists
-  EXISTING_TOKEN=$(curl -sf -u "root:${GITLAB_ROOT_PASSWORD}" \
+  EXISTING_TOKEN=$(curl -k -sf -u "root:${GITLAB_ROOT_PASSWORD}" \
     "${GITLAB_URL}/api/v4/personal_access_tokens" \
     | jq -r ".[] | select(.name == \"${GITLAB_TOKEN_NAME}\") | .id" | head -1 || echo "")
   
@@ -26,7 +26,7 @@ if [ -z "$SESSION_TOKEN" ]; then
     echo "Token '${GITLAB_TOKEN_NAME}' already exists (ID: $EXISTING_TOKEN). Using existing token." >&2
     # Note: We can't retrieve the actual token value, only revoke/create new
     echo "Revoking old token and creating a new one..." >&2
-    curl -sf -u "root:${GITLAB_ROOT_PASSWORD}" \
+    curl -k -sf -u "root:${GITLAB_ROOT_PASSWORD}" \
       -X DELETE "${GITLAB_URL}/api/v4/personal_access_tokens/$EXISTING_TOKEN" || true
   fi
   
@@ -56,17 +56,17 @@ else
   echo "Creating personal access token..." >&2
   
   # Get user ID
-  USER_ID=$(curl -sf -H "Authorization: Bearer $SESSION_TOKEN" \
+  USER_ID=$(curl -k -sf -H "Authorization: Bearer $SESSION_TOKEN" \
     "${GITLAB_URL}/api/v4/user" | jq -r '.id')
   
   # Check for existing token
-  EXISTING_TOKEN_ID=$(curl -sf -H "Authorization: Bearer $SESSION_TOKEN" \
+  EXISTING_TOKEN_ID=$(curl -k -sf -H "Authorization: Bearer $SESSION_TOKEN" \
     "${GITLAB_URL}/api/v4/personal_access_tokens" \
     | jq -r ".[] | select(.name == \"${GITLAB_TOKEN_NAME}\") | .id" | head -1 || echo "")
   
   if [ -n "$EXISTING_TOKEN_ID" ]; then
     echo "Revoking existing token..." >&2
-    curl -sf -H "Authorization: Bearer $SESSION_TOKEN" \
+    curl -k -sf -H "Authorization: Bearer $SESSION_TOKEN" \
       -X DELETE "${GITLAB_URL}/api/v4/personal_access_tokens/$EXISTING_TOKEN_ID" || true
   fi
   
@@ -74,7 +74,7 @@ else
   echo "Attempting to create token via API..." >&2
   EXPIRES_AT=$(date -u -v+1y +"%Y-%m-%d")  # Set expiration to 1 year from now
   
-  RESPONSE=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $SESSION_TOKEN" \
+  RESPONSE=$(curl -k -s -w "\n%{http_code}" -H "Authorization: Bearer $SESSION_TOKEN" \
     -X POST "${GITLAB_URL}/api/v4/user/personal_access_tokens" \
     -H "Content-Type: application/json" \
     --data-raw "{\"name\":\"${GITLAB_TOKEN_NAME}\",\"scopes\":[\"api\",\"write_repository\",\"read_repository\"],\"expires_at\":\"${EXPIRES_AT}\"}")

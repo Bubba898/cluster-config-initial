@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - gitlab/gitlab.yaml
   - headlamp/headlamp.yaml
+  - gitlab-runner/gitlab-runner.yaml
 
