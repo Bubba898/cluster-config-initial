@@ -148,6 +148,14 @@ spec:
             namespace = "{{.Release.Namespace}}"
             image = "ubuntu:22.04"
             privileged = true
+            [[runners.kubernetes.volumes.empty_dir]]
+              name = "docker-certs"
+              mount_path = "/certs/client"
+              medium = "Memory"
+          [runners.kubernetes.services]
+            [[runners.kubernetes.services.service]]
+              name = "docker:dind"
+              command = ["dockerd", "--host=unix:///var/run/docker.sock", "--insecure-registry=gitlab-registry.gitlab.svc.cluster.local:5000", "--insecure-registry=registry.gitlab.svc.cluster.local:5000"]
     securityContext:
       allowPrivilegeEscalation: true
       privileged: true
