@@ -220,13 +220,57 @@
       delay: 5
       until: git_push.rc == 0
 
-    - name: Update bootstrap_git_repo_url in group_vars
-      ansible.builtin.lineinfile:
-        path: "{{ playbook_dir }}/group_vars/all.yml"
-        regexp: '^bootstrap_git_repo_url:'
-        line: 'bootstrap_git_repo_url: "{{ gitlab_repo_url_internal_clean }}"'
-        backup: yes
-      register: updated_config
+    - name: Add gitlab-auth secretRef to Flux GitRepository
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd "{{ playbook_dir }}/.."
+        
+        FILE="clusters/home/flux-system/gotk-sync.yaml"
+        
+        # Check if secretRef is already present
+        if grep -q "secretRef:" "$FILE"; then
+          echo "secretRef already present in gotk-sync.yaml, skipping"
+          exit 0
+        fi
+        
+        # Use awk to add secretRef after 'branch: main' in the GitRepository spec
+        awk '
+          /^apiVersion: source.toolkit.fluxcd.io/ { in_gitrepo=1 }
+          in_gitrepo && /^---/ { in_gitrepo=0 }
+          in_gitrepo && /branch: main/ { 
+            print $0
+            print "  secretRef:"
+            print "    name: gitlab-auth"
+            next
+          }
+          { print }
+        ' "$FILE" > "${FILE}.tmp"
+        
+        mv "${FILE}.tmp" "$FILE"
+        
+        # Stage the change
+        git add "$FILE"
+        
+        # Check if there are changes to commit
+        if git diff --cached --quiet; then
+          echo "No changes to commit"
+          exit 0
+        fi
+        
+        # Commit the change
+        git commit -m "Add gitlab-auth secretRef to Flux GitRepository
+
+        This secret is created during the migration to in-cluster GitLab
+        and contains the deploy token credentials for Flux to authenticate
+        with the GitLab repository."
+        
+        # Push to in-cluster GitLab
+        git push incluster main
+        
+        echo "✓ gitlab-auth secretRef added and pushed to in-cluster GitLab"
+      args:
+        executable: /bin/bash
+      register: add_secret_ref
 
     - name: Display updated configuration
       ansible.builtin.debug:
