@@ -129,9 +129,6 @@ spec:
     runners:
       privileged: true
       image: ubuntu:22.04
-      services:
-        - name: docker:dind
-          command: ["--insecure-registry=gitlab-registry.gitlab.svc.cluster.local:5000"]
       config: |
         [[runners]]
           clone_url = "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
@@ -151,6 +148,9 @@ spec:
             namespace = "{{.Release.Namespace}}"
             image = "ubuntu:22.04"
             privileged = true
+            [[runners.kubernetes.services]]
+              name = "docker:dind"
+              command = ["--insecure-registry=gitlab-registry.gitlab.svc.cluster.local:5000"]
     securityContext:
       allowPrivilegeEscalation: true
       privileged: true
