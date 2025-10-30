@@ -132,7 +132,13 @@ spec:
       config: |
         [[runners]]
           clone_url = "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
-          environment = ["CI_REGISTRY=registry.gitlab.svc.cluster.local:5000"]
+          environment = [
+            "CI_REGISTRY=registry.gitlab.svc.cluster.local:5000",
+            "CI_SERVER_HOST=gitlab-webservice-default.gitlab.svc.cluster.local",
+            "CI_SERVER_PORT=8181",
+            "CI_SERVER_PROTOCOL=http"
+          ]
+          pre_clone_script = "echo registry.gitlab.svc.cluster.local:5000 > /etc/gitlab-runner-registry-host || true"
           [runners.kubernetes]
             namespace = "{{.Release.Namespace}}"
             image = "ubuntu:22.04"
