@@ -139,25 +139,20 @@ spec:
             "CI_SERVER_PROTOCOL=http"
           ]
           pre_build_script = """
-            # Get the registry service IP
-            REGISTRY_IP=$(getent hosts registry.gitlab.svc.cluster.local | awk '{ print $$1 }' | head -1)
-            
-            if [ -n "$$REGISTRY_IP" ]; then
-              # Add /etc/hosts entry to map external registry hostname to internal service
-              echo "$$REGISTRY_IP registry.${INGRESS_IP}.sslip.io" >> /etc/hosts
-              echo "Added /etc/hosts entry: $$REGISTRY_IP registry.${INGRESS_IP}.sslip.io"
-            else
-              echo "Warning: Could not resolve registry.gitlab.svc.cluster.local"
-            fi
-            
-            # Also ensure CI_REGISTRY is set to internal service
+            # Override any registry variables that might use external hostnames
             export CI_REGISTRY="registry.gitlab.svc.cluster.local:5000"
-            echo "CI_REGISTRY set to: $$CI_REGISTRY"
+            export CI_REGISTRY_IMAGE="$$CI_REGISTRY/$$CI_PROJECT_PATH"
+            
+            echo "Using internal registry: $$CI_REGISTRY"
+            echo "Registry image: $$CI_REGISTRY_IMAGE"
           """
           [runners.kubernetes]
             namespace = "{{.Release.Namespace}}"
             image = "ubuntu:22.04"
             privileged = true
+            [[runners.kubernetes.host_aliases]]
+              ip = "10.43.37.72"
+              hostnames = ["registry.${INGRESS_IP}.sslip.io"]
     securityContext:
       allowPrivilegeEscalation: true
       privileged: true
