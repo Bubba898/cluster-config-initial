@@ -157,12 +157,17 @@ spec:
       type: memory
     allInOne:
       enabled: true
+      # Explicitly configure service ports
+      service:
+        type: ClusterIP
     agent:
       enabled: false
     collector:
       enabled: false
     query:
       enabled: false
+    # Override service name to match Kiali and VirtualService expectations
+    fullnameOverride: jaeger
 ---
 # DestinationRules for observability services
 apiVersion: networking.istio.io/v1beta1
