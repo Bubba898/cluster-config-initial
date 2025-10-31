@@ -22,6 +22,14 @@
         project_id: "{{ hostvars['localhost'].project_id | default(omit) }}"
         project_was_created: "{{ hostvars['localhost'].project_was_created | default(false) }}"
 
+    - name: Validate required facts
+      ansible.builtin.assert:
+        that:
+          - gitlab_access_token is defined and gitlab_access_token != omit
+          - project_id is defined and project_id != omit
+        fail_msg: "Required facts from setup-gitlab-project.yml are missing. Make sure to run the playbooks in order and that the GitLab project was created successfully."
+        quiet: false
+
     - name: Get existing deploy tokens
       ansible.builtin.uri:
         url: "{{ gitlab_url }}/api/v4/projects/{{ project_id }}/deploy_tokens"

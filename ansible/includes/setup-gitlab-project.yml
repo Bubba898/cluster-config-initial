@@ -14,6 +14,10 @@
     gitlab_token_name: "ansible-automation"
 
   tasks:
+    - name: Normalize gitlab_url if it's a task result dictionary
+      ansible.builtin.set_fact:
+        gitlab_url: "{{ gitlab_url.stdout if (gitlab_url is mapping and 'stdout' in gitlab_url) else gitlab_url }}"
+
     - name: Wait for GitLab webservice pod to be ready
       ansible.builtin.shell: |
         set -euo pipefail
@@ -30,16 +34,12 @@
       until: gitlab_webservice_ready.rc == 0
 
     - name: Wait for GitLab readiness endpoint
-      ansible.builtin.shell: |
-        set -euo pipefail
-        echo "Checking GitLab readiness endpoint..."
-        curl -k -sf -o /dev/null "{{ gitlab_url }}/-/readiness"
-      args:
-        executable: /bin/bash
-      register: gitlab_ready
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/-/readiness"
+        validate_certs: false
+        status_code: [200]
       retries: 300
       delay: 1
-      until: gitlab_ready.rc == 0
 
     - name: Get GitLab root password from Kubernetes secret
       ansible.builtin.shell: |
@@ -140,7 +140,7 @@
       when: project_info.status == 404
       changed_when: project_created.status == 201
 
-    - name: Get project info (existing project)
+    - name: Get project info (existing project or after creation attempt)
       ansible.builtin.uri:
         url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | urlencode }}"
         method: GET
@@ -150,37 +150,17 @@
         validate_certs: false
       register: project_info_final
       changed_when: false
-      when: project_info.status == 200
+      when: project_info.status == 200 or (project_info.status == 404 and project_created is defined and project_created.status != 201)
 
     - name: Set project_id from creation response (newly created)
       ansible.builtin.set_fact:
         project_id: "{{ project_created.json.id }}"
       when: project_info.status == 404 and project_created is defined and project_created.status == 201
 
-    - name: Set project_id fact
+    - name: Set project_id fact from final project info
       ansible.builtin.set_fact:
         project_id: "{{ project_info_final.json.id }}"
-      when: project_info.status == 200
-
-    - name: Get project info to resolve ID (created earlier or exists)
-      ansible.builtin.uri:
-        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | urlencode }}"
-        method: GET
-        headers:
-          PRIVATE-TOKEN: "{{ gitlab_access_token }}"
-        status_code: 200
-        validate_certs: false
-      register: project_info_final_retry
-      changed_when: false
-      retries: 60
-      delay: 2
-      until: project_info_final_retry.status == 200
-      when: project_id is not defined
-
-    - name: Set project_id from resolved project info
-      ansible.builtin.set_fact:
-        project_id: "{{ (project_info_final_retry.json.id if project_info_final_retry is defined else project_info_final.json.id) }}"
-      when: project_id is not defined
+      when: project_info_final is defined and project_info_final.json.id is defined
 
     - name: Set project_created fact
       ansible.builtin.set_fact:
@@ -232,5 +212,4 @@
         msg:
           - "✓ GitLab project setup complete"
           - "Project: {{ gitlab_url }}/{{ gitlab_project_path }}"
-          - "Project ID: {{ project_id }}"
 
